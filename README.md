@@ -1,7 +1,7 @@
 # radar-return-statistics-postprocessing
 
-Joins external gridded products (BedMachine, ITS_LIVE, MAR) onto the per-trace
-radar metrics produced by
+Joins external gridded products (BedMachine, ITS_LIVE, ERA5, geothermal heat flow)
+onto the per-trace radar metrics produced by
 [`radar-return-statistics`](../radar_return_statistics) and writes one
 geoparquet per icechunk store.
 
@@ -64,23 +64,38 @@ matching the upstream style. Key sections:
 
 | name | regions | columns | source | auth |
 |------|---------|---------|--------|------|
-| `bedmachine` | antarctic (NSIDC-0756 v4), greenland (IDBMG4 v6) | per `variables:` — e.g. `bedmachine_bed_m`, `bedmachine_surface_m`, `bedmachine_thickness_m`, `bedmachine_mask` | NSIDC | Earthdata |
-| `itslive` | antarctic, greenland | `itslive_v_m_yr` | AWS Open Data | none |
-| `mar` | greenland | `smb_mean_mm_we_yr`, `t2m_mean_K` | HTTP | none |
+| `bedmachine` | antarctic (NSIDC-0756 v4), greenland (IDBMG4 v6) | per `variables:` — e.g. `bedmachine_bed_m`, `bedmachine_surface_m`, `bedmachine_thickness_m`, `bedmachine_mask`, `bedmachine_errbed_m` | NSIDC | Earthdata |
+| `itslive` | antarctic, greenland | `itslive_v_m_yr`, `itslive_v_error_m_yr` | AWS Open Data | none |
+| `era5` | global (all stores) | `era5_t2m_mean_K` | WeatherBench2 (GCS) | none |
+| `ghf` | antarctic, greenland | `ghf_mW_m2`, `ghf_lower_mW_m2`, `ghf_upper_mW_m2` | Zenodo 17745730 | none |
 
-`bedmachine` takes a `variables:` list. Continuous fields (`bed`/`surface`/`thickness`,
-metres) are sampled bilinearly; the categorical `mask`
+`era5` samples a long-term mean 2 m air temperature from the WeatherBench2 ERA5
+hourly **climatology** (1990–2019, 0.25°, period fixed by the product); the global
+mean field is computed once (~6 GB read) and cached at ~4 MB, then reused by every
+store.
+
+`ghf` is geothermal heat flow with a lower/upper uncertainty envelope, from the
+community-recommended, **re-gridded (non-topographically-corrected)** fields of
+Fahrner et al. (2025) / Lösing et al. (2026): Lösing & Ebbing (2021) for Antarctica
+and Colgan et al. (2022) for Greenland (without NGRIP by default; `ngrip: true` for
+the with-NGRIP variant). Source values are W/m²; output is mW/m². The regridded
+version is used because only it carries uncertainties (the topographically corrected
+version does not).
+
+`bedmachine` takes a `variables:` list. Continuous fields
+(`bed`/`surface`/`thickness`/`errbed`, metres) are sampled bilinearly; the
+categorical `mask`
 (0=ocean, 1=ice-free-land, 2=grounded-ice, 3=floating-ice, 4=lake-vostok/non-greenland)
-is sampled nearest. Antarctica ships all variables in one netCDF; for Greenland,
-only `bed` has a standalone GeoTIFF, so requesting other variables pulls the full
-netCDF (~2.8 GB).
+is sampled nearest. `errbed` is BedMachine's bed-elevation error. Antarctica ships
+all variables in one netCDF; for Greenland, only `bed` has a standalone GeoTIFF, so
+requesting other variables pulls the full netCDF (~2.8 GB).
 
 Each plugin is one file in `src/radar_postproc/datasets/` implementing the
 `ExternalDataset` protocol (`fetch` / `open` / `sample`), registered via
 `@register`. Adding a dataset = one new file + one config entry.
 
-> Antarctic MAR (SMB + t2m) is available at <https://zenodo.org/records/4459259>
-> and can be wired in the same way as the Greenland plugin — not yet implemented.
+See [`docs/data_sources.md`](docs/data_sources.md) for citations, file provenance,
+and how to interpret each error/uncertainty field.
 
 ## Reproducibility
 
@@ -92,10 +107,6 @@ sampling method/CRS per column.
 
 ## Credentials
 
-- **AWS**: none needed. The `opr-radar-metrics` icechunk stores are public, and
-  this is a read-only consumer, so S3 reads are **anonymous** (`store.anonymous`
-  defaults to `true`; set it to `false` only for a private store). ITS_LIVE is read
-  over public HTTPS, also no AWS auth.
 - **Earthdata** (BedMachine via `earthaccess`): `EARTHDATA_USERNAME` /
   `EARTHDATA_PASSWORD` env vars or `~/.netrc`.
 

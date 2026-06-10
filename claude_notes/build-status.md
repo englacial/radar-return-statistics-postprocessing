@@ -14,8 +14,11 @@ Architecture: `../../claude_notes/initial-plan.md` (parent opr/claude_notes, rea
 - **sampling.py**: `sample_raster` (in-memory bilinear/nearest via xr.interp) +
   `sample_cog` (windowed rasterio reads of local/remote COGs — no full load).
 - **datasets/**: `@register` registry; `bedmachine` (Antarctic netCDF v4 / Greenland
-  per-variable GeoTIFF v6, earthaccess), `itslive` (v2 static speed COG, remote
-  windowed sampling, ETag as provenance hash). `mar` = **registered stub, deferred**.
+  per-variable GeoTIFF v6, earthaccess; bed/surface/thickness/mask + `errbed`),
+  `itslive` (v2 static speed COG `v` + `v_error`, remote windowed sampling, ETag as
+  provenance hash), `era5` (WB2 1990-2019 hourly climatology → global mean t2m field,
+  cached 4 MB), `ghf` (Lösing & Ebbing 2021 / Colgan 2022 regridded non-topo GHF +
+  lower/upper envelope, W/m²→mW/m², Zenodo 17745730). (MAR/SMB removed — out of scope.)
 - **provenance.py / output.py**: content-derived `run_id`, manifest (embedded in
   parquet + sidecar json).
 - **runner.py + click CLI**: `run` / `plot` / `to-csv` / `list-datasets` /
@@ -47,15 +50,12 @@ ase=9HSDDT9ZSZ4JWR5K59HG · greenland=47YWMVPHYRNBK939GHPG · utig=DS449QPKYFC4E
   download/zarr) — the Antarctic COG is ~5 GB so /vsicurl sampling avoids the download.
 - `netcdf4` engine for BedMachine nc (h5netcdf needs h5py, not installed).
 
-## Outstanding (paused for user review before CI)
+## Status / outstanding
 
-1. **MAR** deferred — need a Greenland source with SMB + t2m. Candidates surveyed:
-   Maure 2023 (Zenodo 10007946, SMB only, 6 km, 8 GB); MARv3.12 Greenland (climato.be /
-   Zenodo 7591112 etc.). Antarctic MAR: Zenodo 4459259 (Kittel 2021). Awaiting source choice.
-2. **Greenland/utig** validated only via `validate-config`; not yet run end-to-end.
-   (greenland/utig configs have bedmachine; itslive commented for Greenland.)
-3. **CI**: `.github/workflows/augment.yml` done — manual trigger, matrix over the 3
-   stores, `uv sync` + `uv run snakemake`, actions/cache for BedMachine downloads,
-   outputs as artifacts. Needs repo secrets EARTHDATA_USERNAME/PASSWORD. No test-only
-   `ci.yml` yet (offered).
-4. No git commit yet → manifest `git.sha` is null until first commit.
+- **MAR / SMB**: removed entirely — out of scope for now.
+- **CI**: `ci.yml` (ruff + pytest) and `augment.yml` (manual matrix run, actions/cache,
+  artifacts) both committed. `augment.yml` needs repo secrets EARTHDATA_USERNAME/PASSWORD.
+- **Runs**: ase + greenland exercised end-to-end with all datasets; utig via the same
+  Antarctic path (not re-run after every change). outputs/ are gitignored.
+- **Uncommitted**: era5, ghf, the plot-projection fix, the two error fields, docs, and
+  MAR removal are in the working tree (initial + utig + GitHub-Actions commits are in).

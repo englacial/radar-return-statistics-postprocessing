@@ -53,14 +53,22 @@ def plot_variables(
     out_dir = Path(out_dir) if out_dir else parquet_path.parent / "plots"
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    # Use ONE display projection for every variable so the maps are comparable,
+    # regardless of the CRS each value happened to be sampled in (e.g. ERA5 is
+    # sampled in EPSG:4326 but should still plot in the same polar stereographic
+    # frame as BedMachine/ITS_LIVE). Pick the hemisphere's polar stereographic
+    # from the trace latitudes.
+    display_crs = "EPSG:3031" if float(gdf.geometry.y.mean()) < 0 else "EPSG:3413"
+    pts = gdf.to_crs(display_crs)
+    x_all, y_all = pts.geometry.x.to_numpy(), pts.geometry.y.to_numpy()
+
     written = []
     for col in cols:
         if col not in gdf.columns:
             logger.warning("Column %s not in parquet, skipping plot", col)
             continue
-        crs = sampling.get(col, {}).get("crs", "EPSG:3031")
-        pts = gdf.to_crs(crs)
-        x, y = pts.geometry.x.to_numpy(), pts.geometry.y.to_numpy()
+        sampled_crs = sampling.get(col, {}).get("crs", display_crs)
+        x, y = x_all, y_all
         v = gdf[col].to_numpy()
         finite = np.isfinite(v)
 
@@ -79,8 +87,8 @@ def plot_variables(
             ax.legend(loc="upper right", fontsize=8)
         fig.colorbar(sc, ax=ax, shrink=0.7, label=col)
         ax.set_aspect("equal")
-        ax.set_title(f"{col}\n{run_id} · {crs} · n={finite.sum()}/{len(v)}")
-        ax.set_xlabel("x (m)")
+        ax.set_title(f"{col}\n{run_id} · sampled in {sampled_crs} · n={finite.sum()}/{len(v)}")
+        ax.set_xlabel(f"x (m, {display_crs})")
         ax.set_ylabel("y (m)")
         fig.tight_layout()
 

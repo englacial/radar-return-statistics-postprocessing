@@ -19,8 +19,9 @@ datasets:
     version: "6"
     # surface/thickness/mask come from the full netCDF (~2.8 GB); only `bed`
     # has a standalone GeoTIFF. Drop to just [bed] to use the smaller GeoTIFF.
-    variables: [bed, surface, thickness, mask]
+    variables: [bed, surface, thickness, mask, errbed]
   - name: itslive
     region: greenland
-  # - name: mar
-  #     region: greenland
+  - name: era5  # mean t2m from the WeatherBench2 1990-2019 climatology (period fixed by product)
+  - name: ghf  # Colgan et al. (2022) geothermal heat flow + lower/upper bounds (regridded, non-topo, no NGRIP)
+    region: greenland

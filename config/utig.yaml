@@ -18,5 +18,5 @@ datasets:
     region: antarctic
     version: "4"
     variables: [bed, surface, thickness, mask]
-  # - name: itslive
-  #     region: antarctic
+  - name: itslive
+    region: antarctic

@@ -1,0 +1,18 @@
+# Lint + tests on every push / PR. No network, no secrets — the integration
+# tests build a local icechunk store and sample synthetic rasters in-memory.
+
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --extra test
+      - run: uv run ruff check src/ tests/
+      - run: uv run pytest -q

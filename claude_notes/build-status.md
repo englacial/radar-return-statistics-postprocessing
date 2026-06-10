@@ -54,5 +54,8 @@ ase=9HSDDT9ZSZ4JWR5K59HG · greenland=47YWMVPHYRNBK939GHPG · utig=DS449QPKYFC4E
    Zenodo 7591112 etc.). Antarctic MAR: Zenodo 4459259 (Kittel 2021). Awaiting source choice.
 2. **Greenland/utig** validated only via `validate-config`; not yet run end-to-end.
    (greenland/utig configs have bedmachine; itslive commented for Greenland.)
-3. **CI** (`ci.yml`, `augment.yml`) not started — user wants to review first.
+3. **CI**: `.github/workflows/augment.yml` done — manual trigger, matrix over the 3
+   stores, `uv sync` + `uv run snakemake`, actions/cache for BedMachine downloads,
+   outputs as artifacts. Needs repo secrets EARTHDATA_USERNAME/PASSWORD. No test-only
+   `ci.yml` yet (offered).
 4. No git commit yet → manifest `git.sha` is null until first commit.

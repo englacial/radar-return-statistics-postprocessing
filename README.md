@@ -105,3 +105,13 @@ sampling method/CRS per column.
 uv run pytest tests/unit        # synthetic-fixture samplers, no network
 uv run pytest -m integration    # synthetic icechunk store + reproducibility
 ```
+
+## GitHub Actions
+
+`.github/workflows/augment.yml` runs the pipeline for each store on a manual
+trigger (`workflow_dispatch`), matrixed over `[ase, greenland, utig]`. Each job is
+just the local workflow — `uv sync` then `uv run snakemake --cores 4 --config
+store=<store>` — with the BedMachine downloads persisted via `actions/cache` and
+the per-store `outputs/` uploaded as an artifact. The only required configuration
+is two repo secrets, `EARTHDATA_USERNAME` and `EARTHDATA_PASSWORD` (BedMachine);
+icechunk and ITS_LIVE need no credentials.

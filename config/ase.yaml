@@ -1,0 +1,22 @@
+# Amundsen Sea Embayment (Antarctic). Input store: s3://opr-radar-metrics/icechunk/ase
+store:
+  backend: "s3"
+  s3_bucket: "opr-radar-metrics"
+  s3_prefix: "icechunk/ase"
+  s3_region: "us-west-2"
+
+icechunk:
+  branch: "main"
+  snapshot_id: "9HSDDT9ZSZ4JWR5K59HG"  # pinned 2026-05-28; re-pin via `resolve-snapshot`
+
+extract:
+  qc_only: true
+  max_traces: null  # set e.g. 10000 for a smoke run
+
+datasets:
+  - name: bedmachine
+    region: antarctic
+    version: "4"
+    variables: [bed, surface, thickness, mask]
+  - name: itslive
+    region: antarctic

@@ -1,0 +1,22 @@
+# UTIG (Antarctic). Input store: s3://opr-radar-metrics/icechunk/utig
+store:
+  backend: "s3"
+  s3_bucket: "opr-radar-metrics"
+  s3_prefix: "icechunk/utig"
+  s3_region: "us-west-2"
+
+icechunk:
+  branch: "main"
+  snapshot_id: "DS449QPKYFC4E98J1G80"  # pinned 2026-05-28; re-pin via `resolve-snapshot`
+
+extract:
+  qc_only: true
+  max_traces: null
+
+datasets:
+  - name: bedmachine
+    region: antarctic
+    version: "4"
+    variables: [bed, surface, thickness, mask]
+  # - name: itslive
+  #     region: antarctic

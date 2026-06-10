@@ -1,0 +1,26 @@
+# Greenland. Input store: s3://opr-radar-metrics/icechunk/greenland
+store:
+  backend: "s3"
+  s3_bucket: "opr-radar-metrics"
+  s3_prefix: "icechunk/greenland"
+  s3_region: "us-west-2"
+
+icechunk:
+  branch: "main"
+  snapshot_id: "47YWMVPHYRNBK939GHPG"  # pinned 2026-05-28; re-pin via `resolve-snapshot`
+
+extract:
+  qc_only: true
+  max_traces: null
+
+datasets:
+  - name: bedmachine
+    region: greenland
+    version: "6"
+    # surface/thickness/mask come from the full netCDF (~2.8 GB); only `bed`
+    # has a standalone GeoTIFF. Drop to just [bed] to use the smaller GeoTIFF.
+    variables: [bed, surface, thickness, mask]
+  - name: itslive
+    region: greenland
+  # - name: mar
+  #     region: greenland

@@ -1,0 +1,56 @@
+[project]
+name = "radar-return-statistics-postprocessing"
+version = "0.1.0"
+description = "Join external gridded products (BedMachine, ITS_LIVE, MAR) onto per-trace radar metrics and write one geoparquet per icechunk store."
+requires-python = ">=3.11"
+dependencies = [
+    "icechunk>=1.0.2",
+    "zarr>=3",
+    "xarray>=2025.1.1",
+    "numpy",
+    "pandas",
+    "geopandas",
+    "shapely",
+    "pyproj",
+    "rioxarray",
+    "rasterio",
+    "pooch",
+    "earthaccess",
+    "s3fs",
+    "fsspec",
+    "netcdf4",
+    "h5netcdf",
+    "scipy",
+    "pyarrow",
+    "pyyaml",
+    "click",
+    "cftime>=1.6.5",
+    "snakemake>=8",
+    "tqdm",
+    "matplotlib",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/radar_postproc"]
+
+[project.scripts]
+radar-postproc = "radar_postproc.__main__:main"
+
+[project.optional-dependencies]
+test = [
+    "pytest>=8",
+    "ruff",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "integration: requires network access (S3 / Earthdata / open data)",
+]
+
+[tool.ruff]
+line-length = 100

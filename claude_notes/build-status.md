@@ -19,11 +19,14 @@ Architecture: `../../claude_notes/initial-plan.md` (parent opr/claude_notes, rea
   provenance hash), `era5` (WB2 1990-2019 hourly climatology → global mean t2m field,
   cached 4 MB), `ghf` (Lösing & Ebbing 2021 / Colgan 2022 regridded non-topo GHF +
   lower/upper envelope, W/m²→mW/m², Zenodo 17745730). (MAR/SMB removed — out of scope.)
-- **provenance.py / output.py**: content-derived `run_id`, manifest (embedded in
-  parquet + sidecar json).
+- **provenance.py / output.py**: content-derived `run_id`. **Fixed human-readable
+  filenames** (`{store}.parquet/.manifest.json/.csv`, `plots/{column}.png`); run_id
+  is NOT in filenames — embedded in parquet KV metadata (`run_id` key + manifest),
+  manifest json, a `# run_id:` CSV comment, and plot titles. `read_run_id()` helper.
 - **runner.py + click CLI**: `run` / `plot` / `to-csv` / `list-datasets` /
-  `validate-config` / `resolve-snapshot`. **Snakefile** DAG: `run` → `plots` + `csv`
-  (each a stable `_SUCCESS` marker; csv writes `{run_id}.csv` next to the parquet).
+  `validate-config` / `resolve-snapshot`. **Snakefile** DAG: `run` → `plots` + `csv`,
+  each targeting fixed files (`plots` uses a `directory()` output); no `_SUCCESS` /
+  `latest.json` sentinels.
 - **plots.py**: per-interpolated-variable sanity map (projected scatter coloured by
   value, NaNs in grey). Snakemake `plots` rule + `radar-postproc plot`. Validated on
   ASE: velocity peaks on Pine Island/Thwaites; bed shows interior marine troughs.

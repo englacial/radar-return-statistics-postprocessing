@@ -16,6 +16,16 @@ import pyarrow.parquet as pq
 
 logger = logging.getLogger(__name__)
 
+# Labels for the categorical BedMachine mask codes (Antarctica/Greenland share 0-3).
+MASK_LABELS = {0: "ocean", 1: "ice-free land", 2: "grounded ice",
+               3: "floating ice", 4: "lake-vostok / non-greenland"}
+
+
+def _category_label(col: str, code: int) -> str:
+    if col == "bedmachine_mask" and code in MASK_LABELS:
+        return f"{code}: {MASK_LABELS[code]}"
+    return str(code)
+
 
 def _load_manifest(parquet_path: Path) -> dict | None:
     """Manifest embedded in parquet metadata, or the sidecar json, or None."""
@@ -73,26 +83,38 @@ def plot_variables(
         finite = np.isfinite(v)
 
         fig, ax = plt.subplots(figsize=(8, 8))
-        # Robust colour limits (2–98th pct) so a few outliers don't wash it out.
-        if finite.any():
-            vmin, vmax = np.nanpercentile(v[finite], [2, 98])
+        categorical = sampling.get(col, {}).get("method") == "nearest"
+        if categorical and finite.any():
+            # Discrete colour per category code (e.g. BedMachine mask).
+            from matplotlib.colors import BoundaryNorm, ListedColormap
+            uniq = np.unique(v[finite].astype(int))
+            base = plt.get_cmap("tab10")
+            cmap = ListedColormap([base(i % base.N) for i in range(len(uniq))])
+            edges = np.concatenate(
+                [[uniq[0] - 0.5], (uniq[:-1] + uniq[1:]) / 2.0, [uniq[-1] + 0.5]])
+            sc = ax.scatter(x[finite], y[finite], c=v[finite].astype(int), s=4,
+                            cmap=cmap, norm=BoundaryNorm(edges, cmap.N))
+            cbar = fig.colorbar(sc, ax=ax, shrink=0.7, label=col, ticks=uniq)
+            cbar.ax.set_yticklabels([_category_label(col, int(u)) for u in uniq])
         else:
-            vmin = vmax = None
-        sc = ax.scatter(x[finite], y[finite], c=v[finite], s=4, cmap="viridis",
-                        vmin=vmin, vmax=vmax)
+            # Continuous field: colour limits span the full min..max of the data.
+            vmin = float(v[finite].min()) if finite.any() else None
+            vmax = float(v[finite].max()) if finite.any() else None
+            sc = ax.scatter(x[finite], y[finite], c=v[finite], s=4, cmap="viridis",
+                            vmin=vmin, vmax=vmax)
+            fig.colorbar(sc, ax=ax, shrink=0.7, label=col)
         # Show NaN points (out of coverage) in light grey for context.
         if (~finite).any():
             ax.scatter(x[~finite], y[~finite], s=3, color="lightgrey",
                        label=f"NaN ({(~finite).sum()})")
             ax.legend(loc="upper right", fontsize=8)
-        fig.colorbar(sc, ax=ax, shrink=0.7, label=col)
         ax.set_aspect("equal")
         ax.set_title(f"{col}\n{run_id} · sampled in {sampled_crs} · n={finite.sum()}/{len(v)}")
         ax.set_xlabel(f"x (m, {display_crs})")
         ax.set_ylabel("y (m)")
         fig.tight_layout()
 
-        path = out_dir / f"{run_id}_{col}.png"
+        path = out_dir / f"{col}.png"
         fig.savefig(path, dpi=120)
         plt.close(fig)
         written.append(str(path))

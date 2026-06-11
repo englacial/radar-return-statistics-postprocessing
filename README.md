@@ -28,15 +28,15 @@ uv run radar-postproc validate-config config/ase.yaml
 
 # Run the full pipeline
 uv run radar-postproc run config/ase.yaml
-# -> outputs/ase/{run_id}.parquet + outputs/ase/{run_id}.manifest.json
+# -> outputs/ase/ase.parquet + outputs/ase/ase.manifest.json
 
 # Sanity-check map plots of each interpolated variable
-uv run radar-postproc plot outputs/ase/{run_id}.parquet
-# -> outputs/ase/plots/{run_id}_{column}.png
+uv run radar-postproc plot outputs/ase/ase.parquet
+# -> outputs/ase/plots/{column}.png
 
 # Convert a geoparquet output to a flat CSV (drops geometry; lat/lon kept)
-uv run radar-postproc to-csv outputs/ase/{run_id}.parquet
-# -> outputs/ase/{run_id}.csv
+uv run radar-postproc to-csv outputs/ase/ase.parquet
+# -> outputs/ase/ase.csv
 
 # Or run the whole DAG (extract+sample+merge, then plots + csv) via Snakemake
 uv run snakemake --cores 4 --config store=ase
@@ -45,6 +45,12 @@ uv run snakemake --cores 4 --config store=ase
 `run` extracts trace points from the pinned snapshot, fetches + samples each
 dataset, merges the columns onto the points, and writes the parquet with the
 manifest embedded in file-level metadata (so a single file is self-describing).
+
+Output filenames are fixed and human-readable (`{store}.parquet`,
+`{store}.manifest.json`, `{store}.csv`, `plots/{column}.png`); re-runs overwrite
+them in place. The content-derived `run_id` is not in the filenames — it's
+embedded in the parquet metadata, the manifest, a leading `# run_id:` comment in
+the CSV, and the plot titles (see [Reproducibility](#reproducibility)).
 
 ## Configuration
 
@@ -99,11 +105,22 @@ and how to interpret each error/uncertainty field.
 
 ## Reproducibility
 
-Output is a pair: `{run_id}.parquet` + `{run_id}.manifest.json`, where
-`run_id = sha256(snapshot_id + config_hash + sorted(dataset_hashes))[:12]`. Same
-inputs → same `run_id` → safe dedup. The manifest records the icechunk snapshot,
-git sha, config (inlined) and hash, per-dataset version/url/sha256, and the
-sampling method/CRS per column.
+Each run is identified by a content-derived
+`run_id = sha256(snapshot_id + config_hash + sorted(dataset_hashes))[:12]`; same
+inputs → same `run_id`. The `run_id` is **not** in the filenames — output names
+are fixed (`{store}.parquet` etc.) and re-runs overwrite in place — so it is
+carried inside each artifact instead:
+
+- **parquet**: the `run_id` key in the file-level metadata (and the full manifest
+  under `radar_postproc_manifest`).
+- **manifest** (`{store}.manifest.json`): `run_id` plus the icechunk snapshot, git
+  sha, config (inlined) and hash, per-dataset version/url/sha256, per-column
+  sampling method/CRS, and the OPR seasons.
+- **csv**: a leading `# run_id: ...` comment (read with
+  `pandas.read_csv(path, comment="#")`).
+- **plots**: the `run_id` is printed in each plot title.
+
+To recover it programmatically: `radar_postproc.output.read_run_id(parquet_path)`.
 
 ## Credentials
 

@@ -1,6 +1,6 @@
 # Build status — radar-return-statistics-postprocessing
 
-Architecture: `../../claude_notes/initial-plan.md` (parent opr/claude_notes, read-only).
+Architecture: `../agent_notes/initial-plan.md`.
 
 ## Done & validated (local, no CI yet)
 

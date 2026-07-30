@@ -25,16 +25,33 @@ def _store_name(config: dict) -> str:
     return Path(str(prefix)).name
 
 
+def filter_min_thickness(gdf: gpd.GeoDataFrame, min_thickness_m: float | None) -> gpd.GeoDataFrame:
+    """Drop traces with radar-derived thickness (surface - bed elevation) below the cutoff.
+
+    Traces with NaN thickness are kept (no evidence they are thin).
+    """
+    if min_thickness_m is None:
+        return gdf
+    thickness = gdf["surface_elevation"] - gdf["bed_elevation"]
+    keep = ~(thickness < min_thickness_m)
+    dropped = int((~keep).sum())
+    if dropped:
+        logger.info("Dropped %d/%d traces with thickness < %.0f m",
+                    dropped, len(gdf), min_thickness_m)
+    return gdf[keep]
+
+
 def extract_stage(config: dict) -> gpd.GeoDataFrame:
     snapshot_id = config["icechunk"]["snapshot_id"]
     ex = config["extract"]
-    return extract_points(
+    gdf = extract_points(
         config["store"],
         snapshot_id=snapshot_id,
         carry_columns=ex["carry_columns"],
         qc_only=ex["qc_only"],
         max_traces=ex["max_traces"],
     )
+    return filter_min_thickness(gdf, ex["min_thickness_m"])
 
 
 def sample_stage(config: dict, gdf: gpd.GeoDataFrame, cache_dir: Path):

@@ -12,6 +12,7 @@ icechunk:
 extract:
   qc_only: true
   max_traces: null
+  min_thickness_m: 100  # drop traces with radar thickness below this
 
 datasets:
   - name: bedmachine

@@ -7,7 +7,7 @@ store:
 
 icechunk:
   branch: "main"
-  snapshot_id: "9HSDDT9ZSZ4JWR5K59HG"  # pinned 2026-05-28; re-pin via `resolve-snapshot`
+  snapshot_id: "MDXN4Y1A3B6CCYC9HBY0"  # pinned 2026-07-30: missing bed picks, record-tail noise, pick-free at-depth noise window stats
 
 extract:
   qc_only: true

@@ -39,9 +39,9 @@ from radar_postproc.io_icechunk import extract_points  # noqa: E402
 from plot_style import INK, style_axis  # noqa: E402
 
 SEASON_COLORS = ["tab:orange", "tab:purple", "tab:red", "tab:brown", "tab:pink"]
-CACHE = Path("outputs/cache/ase_reprocessed_traces_v2.parquet")
+CACHE = Path("outputs/cache/ase_reprocessed_traces_v3.parquet")
 CARRY = ["frame_id", "slow_time", "surface_power_dB", "bed_power_dB",
-         "required_surface_snr_dB", "surface_twtt", "bed_twtt",
+         "required_surface_snr_dB", "surface_twtt", "bed_twtt", "record_end_twtt",
          "pre_surface_noise_dB", "post_bed_noise_dB", "record_tail_noise_dB",
          "post_bed_noise_interp_dB", "post_bed_peak_interp_dB", "post_bed_std_interp_dB",
          "bed_pick_quality", "qc_pass", "qc_surface_pass",

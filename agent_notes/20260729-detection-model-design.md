@@ -184,6 +184,20 @@ peak-over-median delta median +9.5 dB (picked traces).
   (needed to validate the tail metric and window placement for deep beds —
   matters for Greenland, non-issue in ASE).
 
+## Empirical findings — ASE v3 (snapshot 690DKWTHN1BQDZYDJEW0): record-end headroom
+
+`scripts/record_end_check.py`. Headroom = record_end_twtt − bed twtt.
+
+- ASE has ample headroom (medians 38–47 us; <1.3% of traces under 10 us).
+- **Tail contamination extends well beyond the 5 us window**: tail noise is
+  elevated ~40 dB at headroom 15–17 us (2018, the only season with enough
+  low-headroom traces to bin) and flat/clean above ~19 us. Bed *coda* trailing
+  the bed by >10 us reaches the tail window long before the bed itself does.
+- **Guard**: trust record_tail_noise_dB only where headroom > ~20 us; below
+  that, fall back to post_bed_noise_interp_dB (or flag the trace). Apply this
+  everywhere record_end_twtt exists — essential for deep-bed Greenland, where
+  low headroom will be common rather than rare.
+
 ## Identifiability / validation
 
 - theta vs mu intercept: separable because C_i varies trace-to-trace and the

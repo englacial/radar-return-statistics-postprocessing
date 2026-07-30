@@ -1,0 +1,27 @@
+# Combined Antarctic store. Input store: s3://opr-radar-metrics/icechunk/antarctica
+# Supersedes the separate ase/utig stores for the modeling pipeline.
+store:
+  backend: "s3"
+  s3_bucket: "opr-radar-metrics"
+  s3_prefix: "icechunk/antarctica"
+  s3_region: "us-west-2"
+
+icechunk:
+  branch: "main"
+  snapshot_id: "3YH47013745B2T5ZZR50"  # pinned 2026-07-28; re-pin via `resolve-snapshot`
+
+extract:
+  qc_only: true
+  max_traces: null
+  min_thickness_m: 100  # drop traces with radar thickness below this
+
+datasets:
+  - name: bedmachine
+    region: antarctic
+    version: "4"
+    variables: [bed, surface, thickness, mask, errbed]
+  - name: itslive
+    region: antarctic
+  - name: era5  # mean t2m from the WeatherBench2 1990-2019 climatology (period fixed by product)
+  - name: ghf  # Lösing & Ebbing (2021) geothermal heat flow + lower/upper bounds (regridded, non-topo)
+    region: antarctic

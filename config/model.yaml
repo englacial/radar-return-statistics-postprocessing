@@ -1,0 +1,55 @@
+# Cross-store modeling config: grid -> split -> train -> benchmark.
+# Separate from the per-store augment configs so modeling parameters never
+# perturb the augment run_ids.
+
+inputs:
+  antarctic: [antarctica]     # combined continent-wide store, EPSG:3031
+  greenland: [greenland]      # EPSG:3413
+
+grid:
+  resolution_m: 5000          # actual = BedMachine native res * round(target/native)
+  mask_values: [2, 3, 4]      # grounded ice, floating ice, Lake Vostok
+  datasets:
+    - name: bedmachine
+      region: antarctic
+      version: "4"
+      variables: [bed, surface, thickness, mask, errbed]
+    - name: bedmachine
+      region: greenland
+      version: "6"
+      variables: [bed, surface, thickness, mask, errbed]
+    - name: itslive
+      region: antarctic
+      download: true   # ~5 GB COGs; per-point remote reads are far too slow at grid scale
+    - name: itslive
+      region: greenland
+      download: true
+    - name: era5
+    - name: ghf
+      region: antarctic
+    - name: ghf
+      region: greenland
+
+split:
+  target: required_surface_snr_dB
+  nn_cutoff_m: 1000           # grid point gets the nearest obs within this, else NaN
+  cell_size_km: 500           # spatial-blocking cells, anchored at projected (0, 0)
+  n_folds: 5
+  seed: 42
+  test_cells: ["ant:-5:1", "ant:-3:-2", "ant:1:-3", "ant:2:-2", "ant:2:0", "grl:0:-6", "grl:1:-4", "grl:0:-2"] # pick from outputs/model/cell_maps/, e.g. ["ant:-3:1", "grl:0:-5"]
+
+train:
+  seed: 42
+  draws: 1000
+  tune: 1000
+  chains: 4
+  cv_chains: 2                # cheaper CV fits; the final fit uses `chains`
+  predict_batch_size: 100000
+  min_thickness_m: 100        # no training/prediction where BedMachine thickness is below this
+  censoring:
+    enabled: true             # Tobit likelihood: saturated obs enter as lower bounds
+    margin_threshold_dB: 10   # flag obs whose bed pick is within this of the noise floor
+  features: [bedmachine_thickness_m, era5_t2m_mean_K, itslive_v_m_yr, ghf_mW_m2]
+  models:
+    - name: linear
+    - name: atten_refl

@@ -30,6 +30,8 @@ dependencies = [
     "matplotlib",
     "gcsfs>=2026.4.0",
     "dask>=2026.3.0",
+    "pymc>=5.16",
+    "arviz>=0.18",
 ]
 
 [build-system]
@@ -52,6 +54,7 @@ test = [
 testpaths = ["tests"]
 markers = [
     "integration: requires network access (S3 / Earthdata / open data)",
+    "slow: long-running but offline (MCMC sampling)",
 ]
 
 [tool.ruff]

@@ -1,0 +1,70 @@
+# Runs the cross-store modeling pipeline (grid -> split -> train -> benchmark),
+# exactly as you would locally:
+#   uv sync && uv run snakemake --cores 4 model_all
+#
+# Consumes augment outputs from a prior successful `augment` workflow run
+# (pass its run id as input) instead of re-running augment — modeling iterations
+# stay decoupled from snapshot re-pins, and the split manifest still records
+# exactly which augment run_ids were used.
+#
+# Requires the EARTHDATA_USERNAME / EARTHDATA_PASSWORD secrets (BedMachine, on a
+# grid-cache miss). The grid stage is the expensive one (~10 GB of downloads),
+# so its parquet is cached keyed on config/model.yaml; edits that only touch
+# split/train reuse the cached grid via restore-keys.
+
+name: model
+
+on:
+  workflow_dispatch:
+    inputs:
+      augment_run_id:
+        description: "Run id of a successful augment workflow (its artifacts are the inputs)"
+        required: true
+
+jobs:
+  model:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+
+      # Augment outputs: one artifact per store (ase, greenland, utig).
+      - uses: actions/download-artifact@v4
+        with:
+          run-id: ${{ inputs.augment_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: outputs
+
+      # The finished grid (plus small cached inputs). The big ITS_LIVE COGs and
+      # the GHF zip are pruned before the cache is saved (below) to stay inside
+      # the 10 GB per-repo cache budget.
+      - uses: actions/cache@v4
+        with:
+          path: |
+            outputs/model/grid.parquet
+            outputs/model/grid.manifest.json
+            outputs/cache
+          key: model-grid-${{ hashFiles('config/model.yaml') }}
+          restore-keys: model-grid-
+
+      - run: uv sync
+
+      # Grid first, then prune the bulky downloads so split/train (and the
+      # saved cache) never carry them. --rerun-triggers=mtime: the downloaded
+      # augment parquets and cached grid are inputs to trust, not re-derive.
+      - run: uv run snakemake --cores 4 --rerun-triggers=mtime -- outputs/model/grid.parquet
+        env:
+          EARTHDATA_USERNAME: ${{ secrets.EARTHDATA_USERNAME }}
+          EARTHDATA_PASSWORD: ${{ secrets.EARTHDATA_PASSWORD }}
+
+      - run: rm -f outputs/cache/ITS_LIVE_*.tif outputs/cache/GHF_Regridded.zip
+
+      - run: uv run snakemake --cores 4 --rerun-triggers=mtime -- model_all
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: model
+          path: |
+            outputs/model
+            !outputs/model/grid.parquet

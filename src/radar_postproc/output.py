@@ -34,14 +34,41 @@ def write_output(gdf: gpd.GeoDataFrame, manifest: dict, out_dir: str | Path, sto
 
     # Re-open to graft run_id + manifest into key-value file metadata, preserving
     # the geo metadata GeoPandas already wrote.
+    embed_manifest(parquet_path, manifest)
+
+    manifest_path.write_text(json.dumps(manifest, indent=2, default=str))
+    return {"parquet": str(parquet_path), "manifest": str(manifest_path)}
+
+
+def embed_manifest(parquet_path: str | Path, manifest: dict) -> None:
+    """Graft run_id + manifest into a parquet file's key-value metadata in place."""
     table = pq.read_table(parquet_path)
     meta = dict(table.schema.metadata or {})
     meta[_MANIFEST_KEY] = json.dumps(manifest, default=str).encode()
     meta[_RUN_ID_KEY] = str(manifest["run_id"]).encode()
     pq.write_table(table.replace_schema_metadata(meta), parquet_path)
 
+
+def write_stage_output(df: pd.DataFrame, manifest: dict, parquet_path: str | Path) -> dict:
+    """Write a plain (non-geo) parquet stage output + sidecar manifest.
+
+    Same self-describing convention as write_output: fixed filename, run_id and
+    manifest embedded in the parquet metadata, `<stem>.manifest.json` sidecar.
+    """
+    parquet_path = Path(parquet_path)
+    parquet_path.parent.mkdir(parents=True, exist_ok=True)
+    df.to_parquet(parquet_path, index=False)
+    embed_manifest(parquet_path, manifest)
+    manifest_path = parquet_path.with_name(parquet_path.stem + ".manifest.json")
     manifest_path.write_text(json.dumps(manifest, indent=2, default=str))
     return {"parquet": str(parquet_path), "manifest": str(manifest_path)}
+
+
+def read_manifest(parquet_path: str | Path) -> dict | None:
+    """Read the embedded manifest from a parquet output (or None)."""
+    meta = pq.read_schema(parquet_path).metadata or {}
+    raw = meta.get(_MANIFEST_KEY)
+    return json.loads(raw) if raw else None
 
 
 def read_run_id(parquet_path: str | Path) -> str | None:

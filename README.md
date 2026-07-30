@@ -3,7 +3,10 @@
 Joins external gridded products (BedMachine, ITS_LIVE, ERA5, geothermal heat flow)
 onto the per-trace radar metrics produced by
 [`radar-return-statistics`](../radar_return_statistics) and writes one
-geoparquet per icechunk store.
+geoparquet per icechunk store — then models required surface SNR across both
+ice sheets: a full-ice-sheet covariate grid, a spatially-blocked test/fold
+split, and Bayesian models (PyMC) whose predictions are exported as
+viewer-ready Zarr.
 
 The upstream project writes per-trace lat/lon, layer picks, powers, noise
 estimates and a QC mask to versioned icechunk zarr stores on S3
@@ -103,6 +106,51 @@ Each plugin is one file in `src/radar_postproc/datasets/` implementing the
 See [`docs/data_sources.md`](docs/data_sources.md) for citations, file provenance,
 and how to interpret each error/uncertainty field.
 
+## Modeling pipeline (grid → split → train → benchmark)
+
+Cross-store stages driven by one config, `config/model.yaml`:
+
+```bash
+# Everything (uses existing augment outputs; builds grid/split/train/benchmark).
+# --rerun-triggers=mtime keeps snakemake from re-deriving augment outputs that
+# were built elsewhere (CLI, CI artifacts).
+uv run snakemake --cores 4 --rerun-triggers=mtime -- model_all
+
+# Or stage by stage
+uv run radar-postproc grid  config/model.yaml   # outputs/model/grid.parquet
+uv run radar-postproc split config/model.yaml   # outputs/model/split.parquet + cells.csv + cell_maps/
+uv run radar-postproc train config/model.yaml --model linear
+uv run radar-postproc benchmark config/model.yaml
+```
+
+- **grid** builds a ~5 km grid over all ice (strided BedMachine mask, points on
+  native pixel centres, per sheet: antarctic EPSG:3031, greenland EPSG:3413) and
+  samples every dataset plugin onto it. Expensive (multi-GB downloads) but rare.
+- **split** attaches `required_surface_snr_dB` to each grid point (nearest radar
+  observation within `nn_cutoff_m`, ase+utig pooled for the antarctic), assigns
+  500 km blocking cells anchored at the projected origin (stable IDs like
+  `ant:-3:1`), holds out the hand-picked `split.test_cells`, and distributes the
+  rest into `n_folds` folds (seeded, capacity-limited, cell granularity — the
+  Roberts et al. 2017 spatial-blocking rationale). Pick test cells from
+  `outputs/model/cell_maps/*.png` + `cells.csv`, list them in the config, re-run.
+- **train** (per model) runs the spatially-blocked k-fold CV, fits the final
+  model on all training folds, predicts the full grid, and writes
+  `outputs/model/{model}/`: `metrics.json` (per-fold + pooled RMSE/MAE/coverage,
+  sampler diagnostics), `posterior.nc` (ArviZ InferenceData; normalizer +
+  feature list in attrs), `predictions.zarr`, and a provenance manifest.
+- **benchmark** collects every model's metrics into `benchmark.csv`/`.md`.
+
+`predictions.zarr` has one group per sheet (`antarctic`, `greenland`), each a
+regular x/y grid (zarr v2, consolidated metadata, rioxarray `spatial_ref` CRS)
+with `pred_mean`, `pred_std_mu` (parameter uncertainty), `pred_std` (full
+predictive), `obs_snr_dB`, and `fold` (−1 none / 0..k−1 / 100 test) — openable
+directly with `xr.open_zarr(path, group="antarctic")`, QGIS, or a web viewer.
+
+Models are plugins in `src/radar_postproc/models/` (`@register_model`,
+mirroring the datasets registry): `linear` (Bayesian linear regression) and
+`atten_refl` (the 2020 `mu = atten_rate·thickness − refl` structure). Adding a
+model = one file + one entry under `train.models`.
+
 ## Reproducibility
 
 Each run is identified by a content-derived
@@ -122,6 +170,11 @@ carried inside each artifact instead:
 
 To recover it programmatically: `radar_postproc.output.read_run_id(parquet_path)`.
 
+Downstream stages chain provenance: each stage's `run_id` hashes its inputs'
+run_ids plus its own config section (grid ← dataset hashes; split ← grid run_id
++ the three augment run_ids; train ← split run_id + model entry), so any
+prediction traces back to exact snapshots, configs, and dataset versions.
+
 ## Credentials
 
 - **Earthdata** (BedMachine via `earthaccess`): `EARTHDATA_USERNAME` /
@@ -130,8 +183,9 @@ To recover it programmatically: `radar_postproc.output.read_run_id(parquet_path)
 ## Tests
 
 ```bash
-uv run pytest tests/unit        # synthetic-fixture samplers, no network
+uv run pytest tests/unit        # synthetic-fixture samplers + split/model logic, no network
 uv run pytest -m integration    # synthetic icechunk store + reproducibility
+uv run pytest -m slow           # MCMC tests incl. synthetic split->train end-to-end (offline)
 ```
 
 ## GitHub Actions
@@ -143,3 +197,9 @@ store=<store>` — with the BedMachine downloads persisted via `actions/cache` a
 the per-store `outputs/` uploaded as an artifact. The only required configuration
 is two repo secrets, `EARTHDATA_USERNAME` and `EARTHDATA_PASSWORD` (BedMachine);
 icechunk and ITS_LIVE need no credentials.
+
+`.github/workflows/model.yml` runs the modeling pipeline (`workflow_dispatch`),
+taking the run id of a successful augment run as input and downloading its
+artifacts as the split stage's inputs. The finished grid is cached keyed on
+`config/model.yaml`, so split/train-only iterations skip the multi-GB grid
+downloads; the model outputs are uploaded as one `model` artifact.

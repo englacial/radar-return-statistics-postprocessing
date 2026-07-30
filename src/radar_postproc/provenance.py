@@ -33,6 +33,45 @@ def compute_run_id(snapshot_id: str, cfg_hash: str, dataset_hashes: list[str]) -
     return hashlib.sha256(payload.encode()).hexdigest()[:12]
 
 
+def compute_stage_run_id(input_ids: list[str], cfg_hash: str) -> str:
+    """run_id for a downstream stage: chain upstream run_ids / content hashes + config.
+
+    Same shape as compute_run_id, with upstream identities in place of the
+    icechunk snapshot: sha256(sorted(input_ids) + cfg_hash)[:12].
+    """
+    payload = "".join(sorted(input_ids)) + cfg_hash
+    return hashlib.sha256(payload.encode()).hexdigest()[:12]
+
+
+def build_stage_manifest(
+    stage: str,
+    config: dict,
+    section_hash: str,
+    input_ids: list[str],
+    inputs: dict,
+    repo_dir: str = ".",
+    **extra,
+) -> dict:
+    """Manifest for a downstream stage (grid/split/train).
+
+    `inputs` records *what* was consumed (run_ids, dataset infos); `input_ids`
+    are the identity strings actually hashed into the run_id. `section_hash`
+    should hash only the config sections that affect this stage.
+    """
+    run_id = compute_stage_run_id(input_ids, section_hash)
+    return {
+        "run_id": run_id,
+        "stage": stage,
+        "tool_version": __version__,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "git": git_info(repo_dir),
+        "config_hash": section_hash,
+        "config": config,
+        "inputs": inputs,
+        **extra,
+    }
+
+
 def build_manifest(
     config: dict,
     snapshot_id: str,

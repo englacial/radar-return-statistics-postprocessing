@@ -37,6 +37,8 @@ def load_config(config_path: str | Path) -> dict:
     # Point extraction options.
     config["extract"].setdefault("qc_only", True)        # keep only qc_pass traces
     config["extract"].setdefault("max_traces", None)     # cap for smoke runs
+    # Drop traces with radar-derived ice thickness below this (metres); None = keep all.
+    config["extract"].setdefault("min_thickness_m", None)
     # Radar columns carried through to the output (for sanity checks / context).
     config["extract"].setdefault(
         "carry_columns",
@@ -50,6 +52,9 @@ def load_config(config_path: str | Path) -> dict:
             "bed_elevation",
             "surface_power_dB",
             "bed_power_dB",
+            "required_surface_snr_dB",
+            "pre_surface_noise_dB",
+            "post_bed_noise_dB",
             "qc_pass",
         ],
     )
@@ -63,6 +68,68 @@ def load_config(config_path: str | Path) -> dict:
             d = {"name": d}
         norm.append(d)
     config["datasets"] = norm
+
+    return config
+
+
+def load_model_config(config_path: str | Path) -> dict:
+    """Load the cross-store model config (grid/split/train stages), applying defaults.
+
+    Separate from the per-store augment configs so modeling parameters never
+    perturb the augment run_ids. Same plain-dict + setdefault style.
+    """
+    config_path = Path(config_path)
+    if not config_path.exists():
+        raise FileNotFoundError(f"Config file not found: {config_path}")
+
+    with open(config_path) as f:
+        config = yaml.safe_load(f)
+
+    # Which augment stores feed each ice sheet (merged per sheet, native CRS).
+    config.setdefault("inputs", {"antarctic": ["ase", "utig"], "greenland": ["greenland"]})
+
+    # Full-ice-sheet covariate grid.
+    config.setdefault("grid", {})
+    grid = config["grid"]
+    grid.setdefault("resolution_m", 5000)      # actual = native_res * round(target/native)
+    grid.setdefault("mask_values", [2, 3, 4])  # BedMachine: grounded, floating, Lake Vostok
+    grid.setdefault("datasets", [])
+    grid["datasets"] = [{"name": d} if isinstance(d, str) else d for d in grid["datasets"]]
+
+    # Spatially-blocked test/fold split.
+    config.setdefault("split", {})
+    split = config["split"]
+    split.setdefault("target", "required_surface_snr_dB")
+    split.setdefault("nn_cutoff_m", 1000)
+    split.setdefault("cell_size_km", 500)
+    split.setdefault("n_folds", 5)
+    split.setdefault("seed", 42)
+    split.setdefault("test_cells", [])  # e.g. ["ant:-3:1"]; empty -> warning, no test set
+
+    # Bayesian model training / prediction.
+    config.setdefault("train", {})
+    train = config["train"]
+    train.setdefault("seed", 42)
+    train.setdefault("draws", 1000)
+    train.setdefault("tune", 1000)
+    train.setdefault("chains", 4)
+    train.setdefault("cv_chains", 2)   # cheaper CV fits; final fit uses `chains`
+    train.setdefault("predict_batch_size", 100_000)
+    # No training or prediction where BedMachine thickness is below this (metres).
+    train.setdefault("min_thickness_m", None)
+    # SNR saturation: obs whose bed pick sits within margin_threshold_dB of the
+    # post-bed noise floor are treated as right-censored (lower bounds) via a
+    # Tobit likelihood instead of exact values.
+    train.setdefault("censoring", {})
+    train["censoring"].setdefault("enabled", False)
+    train["censoring"].setdefault("margin_threshold_dB", 10.0)
+    train.setdefault("features",
+                     ["bedmachine_thickness_m", "era5_t2m_mean_K", "itslive_v_m_yr", "ghf_mW_m2"])
+    train.setdefault("models", [{"name": "linear"}])
+    train["models"] = [{"name": m} if isinstance(m, str) else m for m in train["models"]]
+
+    config.setdefault("output", {})
+    config["output"].setdefault("dir", "outputs")
 
     return config
 

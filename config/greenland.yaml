@@ -7,12 +7,13 @@ store:
 
 icechunk:
   branch: "main"
-  snapshot_id: "47YWMVPHYRNBK939GHPG"  # pinned 2026-05-28; re-pin via `resolve-snapshot`
+  snapshot_id: "GEAMAHQ7BRVPG9SQPK20"  # pinned 2026-07-31: reprocessed with missing bed picks + new noise metrics
 
 extract:
   qc_only: true
   max_traces: null
   min_thickness_m: 100  # drop traces with radar thickness below this
+  include_nondetections: true  # keep attempted-but-unpicked bed traces (reprocessed store)
 
 datasets:
   - name: bedmachine

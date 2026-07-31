@@ -39,6 +39,9 @@ def load_config(config_path: str | Path) -> dict:
     config["extract"].setdefault("max_traces", None)     # cap for smoke runs
     # Drop traces with radar-derived ice thickness below this (metres); None = keep all.
     config["extract"].setdefault("min_thickness_m", None)
+    # Also keep attempted-but-unpicked bed traces (non-detections) where the store
+    # provides the pick flags (reprocessed stores only).
+    config["extract"].setdefault("include_nondetections", False)
     # Radar columns carried through to the output (for sanity checks / context).
     config["extract"].setdefault(
         "carry_columns",
@@ -52,9 +55,17 @@ def load_config(config_path: str | Path) -> dict:
             "bed_elevation",
             "surface_power_dB",
             "bed_power_dB",
+            "surface_twtt",
             "required_surface_snr_dB",
             "pre_surface_noise_dB",
             "post_bed_noise_dB",
+            # Reprocessed-store columns (warn-skipped where absent): pick-free
+            # at-depth noise window stats + bed-pick availability flags.
+            "post_bed_noise_interp_dB",
+            "post_bed_peak_interp_dB",
+            "bed_pick_available",
+            "bed_pick_attempted",
+            "qc_surface_pass",
             "qc_pass",
         ],
     )
@@ -123,8 +134,6 @@ def load_model_config(config_path: str | Path) -> dict:
     train.setdefault("censoring", {})
     train["censoring"].setdefault("enabled", False)
     train["censoring"].setdefault("margin_threshold_dB", 10.0)
-    train.setdefault("features",
-                     ["bedmachine_thickness_m", "era5_t2m_mean_K", "itslive_v_m_yr", "ghf_mW_m2"])
     train.setdefault("models", [{"name": "linear"}])
     train["models"] = [{"name": m} if isinstance(m, str) else m for m in train["models"]]
 

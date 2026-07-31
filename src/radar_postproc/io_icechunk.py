@@ -62,6 +62,7 @@ def extract_points(
     carry_columns: list[str],
     qc_only: bool = True,
     max_traces: int | None = None,
+    include_nondetections: bool = False,
 ) -> gpd.GeoDataFrame:
     """Open the pinned snapshot and return per-trace points as an EPSG:4326 GeoDataFrame.
 
@@ -109,6 +110,19 @@ def extract_points(
 
     if qc_only and "qc_pass" in root:
         mask = root["qc_pass"][:].astype(bool)
+        if include_nondetections and all(
+            k in root for k in ("qc_surface_pass", "bed_pick_attempted", "bed_pick_available")
+        ):
+            # Attempted-but-unpicked bed traces (non-detections) ride along with
+            # the QC-passing picked traces; stores without the flags are
+            # unaffected (all traces treated as picked).
+            nondetect = (
+                root["qc_surface_pass"][:].astype(bool)
+                & root["bed_pick_attempted"][:].astype(bool)
+                & ~root["bed_pick_available"][:].astype(bool)
+            )
+            logger.info("Including %d non-detection traces", int(nondetect.sum()))
+            mask = mask | nondetect
         df = df[mask].reset_index(drop=True)
         lon, lat = lon[mask], lat[mask]
 

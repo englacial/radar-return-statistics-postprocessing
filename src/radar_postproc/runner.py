@@ -50,6 +50,7 @@ def extract_stage(config: dict) -> gpd.GeoDataFrame:
         carry_columns=ex["carry_columns"],
         qc_only=ex["qc_only"],
         max_traces=ex["max_traces"],
+        include_nondetections=ex["include_nondetections"],
     )
     return filter_min_thickness(gdf, ex["min_thickness_m"])
 

@@ -17,7 +17,7 @@ class LinearModel(BaseBayesianModel):
     name = "linear"
 
     def build(self, X: np.ndarray, y: np.ndarray, feature_names: list[str],
-              upper: np.ndarray | None = None):
+              upper: np.ndarray | None = None, detection: dict | None = None):
         import pymc as pm
 
         coords = {"feature": feature_names}
@@ -26,7 +26,7 @@ class LinearModel(BaseBayesianModel):
             alpha = pm.Normal("alpha", mu=0, sigma=1)
             beta = pm.Normal("beta", mu=0, sigma=1, dims="feature")
             sigma = pm.HalfNormal("sigma", sigma=1)
-            self._likelihood(pm, alpha + Xd @ beta, sigma, y, upper)
+            self._apply_likelihood(pm, alpha + Xd @ beta, sigma, y, upper, detection)
         return model
 
     def mu_draws(self, posterior, X_new: np.ndarray) -> np.ndarray:

@@ -33,7 +33,7 @@ class AttenReflModel(BaseBayesianModel):
         return t, [i for i in range(len(names)) if i != t]
 
     def build(self, X: np.ndarray, y: np.ndarray, feature_names: list[str],
-              upper: np.ndarray | None = None):
+              upper: np.ndarray | None = None, detection: dict | None = None):
         import pymc as pm
 
         self.feature_names = list(feature_names)
@@ -49,7 +49,8 @@ class AttenReflModel(BaseBayesianModel):
             atten_rate = alpha_a + covariates @ beta_a
             refl = alpha_r + covariates @ beta_r
             sigma = pm.HalfNormal("sigma", sigma=1)
-            self._likelihood(pm, atten_rate * thickness - refl, sigma, y, upper)
+            self._apply_likelihood(pm, atten_rate * thickness - refl, sigma, y, upper,
+                                   detection)
         return model
 
     def mu_draws(self, posterior, X_new: np.ndarray) -> np.ndarray:

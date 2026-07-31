@@ -80,6 +80,30 @@ def _make_stores(out_dir, grid):
             "bed_power_dB": -100.0 + margin,
             "post_bed_noise_dB": -100.0,
         })
+        if store == "greenland":
+            # Reprocessed-store shape: pick flags, at-depth noise stats, and a
+            # tail of attempted-but-unpicked traces (half clean, half high-delta).
+            obs["bed_pick_available"] = True
+            obs["bed_pick_attempted"] = True
+            obs["post_bed_noise_interp_dB"] = -100.0
+            obs["post_bed_peak_interp_dB"] = -95.0
+            obs["surface_power_dB"] = -40.0
+            obs["surface_twtt"] = 4e-6
+            nd_src = sheet_grid.sample(n=60, random_state=7)
+            jx = nd_src["x"] + rng.uniform(-200, 200, 60)
+            jy = nd_src["y"] + rng.uniform(-200, 200, 60)
+            nd_lon, nd_lat = Transformer.from_crs(SHEET_CRS[sheet], "EPSG:4326",
+                                                  always_xy=True).transform(jx, jy)
+            nd = pd.DataFrame({
+                "latitude": nd_lat, "longitude": nd_lon,
+                "required_surface_snr_dB": np.nan, "bed_power_dB": np.nan,
+                "post_bed_noise_dB": np.nan,
+                "bed_pick_available": False, "bed_pick_attempted": True,
+                "post_bed_noise_interp_dB": -100.0,
+                "post_bed_peak_interp_dB": -100.0 + np.where(np.arange(60) % 2, 4.0, 20.0),
+                "surface_power_dB": -40.0, "surface_twtt": 4e-6,
+            })
+            obs = pd.concat([obs, nd], ignore_index=True)
         store_dir = out_dir / store
         store_dir.mkdir(parents=True)
         path = store_dir / f"{store}.parquet"
@@ -101,6 +125,8 @@ def pipeline(tmp_path_factory):
         "train": {"draws": 150, "tune": 150, "chains": 1, "cv_chains": 1, "seed": 0,
                   "features": FEATURES,
                   "censoring": {"enabled": True, "margin_threshold_dB": 10},
+                  "detection": {"enabled": True,
+                                "delta_filter": {"enabled": True, "max_dB": 8}},
                   "models": [{"name": "linear"}, {"name": "atten_refl"}]},
     }
     config_path = out_dir / "model.yaml"
@@ -115,8 +141,16 @@ class TestSplit:
         out_dir, config, _, result, _ = pipeline
         df = pd.read_parquet(out_dir / "model" / "split.parquet")
         for col in ["required_surface_snr_dB", "obs_margin_dB", "obs_dist_m",
-                    "cell_id", "fold", "is_test"]:
+                    "cell_id", "fold", "is_test", "is_nondetect", "nd_delta_dB", "C_dB"]:
             assert col in df.columns
+        nd = df[df["is_nondetect"]]
+        assert len(nd) > 0
+        assert nd["required_surface_snr_dB"].isna().all()
+        assert np.isfinite(nd["C_dB"]).any()
+        # Observed points carry a finite ceiling too (C = target + margin).
+        obs_pts = df[df["required_surface_snr_dB"].notna() & df["obs_margin_dB"].notna()]
+        assert np.allclose(obs_pts["C_dB"],
+                           obs_pts["required_surface_snr_dB"] + obs_pts["obs_margin_dB"])
         observed = df[df["required_surface_snr_dB"].notna()]
         assert len(observed) > 500
         assert (df["obs_dist_m"].dropna() <= 400).all()
@@ -158,6 +192,11 @@ class TestTrain:
         assert metrics["censoring"]["enabled"] is True
         assert metrics["pooled_cv"]["n_censored"] > 0
         assert np.isfinite(metrics["pooled_cv"]["logscore_dB"]["mean"])
+        det = metrics["detection"]
+        assert det["enabled"] is True
+        assert det["n_nondetect_used"] > 0
+        assert det["n_nondetect_excluded"] > 0  # the high-delta half
+        assert np.isfinite(det["theta_mean_dB"]) and np.isfinite(det["tau_mean_dB"])
         assert metrics["test"] is not None
         # The synthetic law is linear with sd=1 noise; CV RMSE should be close.
         assert metrics["pooled_cv"]["rmse_dB"]["mean"] < 3.0

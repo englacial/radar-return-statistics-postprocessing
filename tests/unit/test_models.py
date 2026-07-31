@@ -105,6 +105,53 @@ class TestLinearModel:
         assert ls_t > ls_n
 
     @pytest.mark.slow
+    def test_detection_recovers_theta_and_reduces_bias(self):
+        """Simulate a soft detection threshold; the detection-aware fit should
+        recover theta and undo the naive fit's downward bias."""
+        rng = np.random.default_rng(3)
+        n = 1500
+        theta_true, tau_true = 10.0, 3.0
+        x = rng.normal(size=(n, 1))
+        y = 60.0 + 12.0 * x[:, 0] + rng.normal(0, 4.0, n)   # dB scale
+        C = np.full(n, 75.0)                                 # uniform ceiling
+        p_det = 1.0 / (1.0 + np.exp(-1.702 * (C - y - theta_true) / tau_true))
+        det = rng.uniform(size=n) < p_det
+        assert 0.1 < det.mean() < 0.95
+
+        # z-score by detected-sample stats, mimicking the pipeline.
+        mean, std = y[det].mean(), y[det].std()
+        yz = (y[det] - mean) / std
+        X_obs = x[det]
+        X_nd = x[~det]
+
+        naive = get_model("linear")
+        idata_n = naive.fit(X_obs, yz, ["f"], draws=400, tune=400, chains=2, seed=0)
+        mu_n = naive._stacked_posterior(idata_n)
+        bias_naive = (mu_n["alpha"].values.mean() * std + mean) - 60.0
+
+        det_model = get_model("linear")
+        sel = C[det] - y[det]
+        sel[:: 20] = np.nan  # non-finite margins must not poison the sampler
+        detection = {
+            "sel_margin_dB": sel,
+            "C_nd_dB": C[~det],
+            "target_norm": (mean, std),
+            "theta_prior": [10.0, 5.0],
+            "tau_prior_sigma": 5.0,
+        }
+        X_all = np.vstack([X_obs, X_nd])
+        idata_d = det_model.fit(X_all, yz, ["f"], draws=400, tune=400, chains=2,
+                                seed=0, detection=detection)
+        post = det_model._stacked_posterior(idata_d)
+        theta_hat = float(post["theta"].values.mean())
+        bias_det = (post["alpha"].values.mean() * std + mean) - 60.0
+
+        assert abs(theta_hat - theta_true) < 2.0
+        assert bias_naive < -0.5  # naive is biased low
+        assert abs(bias_det) < abs(bias_naive)
+        assert det_model.diagnostics(idata_d)["divergences"] < 100
+
+    @pytest.mark.slow
     def test_predict_batching_consistent(self):
         rng = np.random.default_rng(1)
         X = rng.normal(size=(50, 2))

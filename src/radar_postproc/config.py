@@ -134,6 +134,19 @@ def load_model_config(config_path: str | Path) -> dict:
     train.setdefault("censoring", {})
     train["censoring"].setdefault("enabled", False)
     train["censoring"].setdefault("margin_threshold_dB", 10.0)
+    # Detection-aware likelihood: learned soft threshold (theta, tau) + matched
+    # non-detection grid points. delta_filter optionally excludes non-detections
+    # whose at-depth window shows energy (delta >= max_dB) — plausible clutter/
+    # mislocated-bed gaps rather than low SNR. Disable to use all of them.
+    train.setdefault("detection", {})
+    train["detection"].setdefault("enabled", False)
+    train["detection"].setdefault("theta_prior", [10.0, 5.0])
+    train["detection"].setdefault("tau_prior_sigma", 5.0)
+    train["detection"].setdefault("delta_filter", {})
+    train["detection"]["delta_filter"].setdefault("enabled", True)
+    train["detection"]["delta_filter"].setdefault("max_dB", 8.0)
+    train.setdefault("features",
+                     ["bedmachine_thickness_m", "era5_t2m_mean_K", "itslive_v_m_yr", "ghf_mW_m2"])
     train.setdefault("models", [{"name": "linear"}])
     train["models"] = [{"name": m} if isinstance(m, str) else m for m in train["models"]]
 

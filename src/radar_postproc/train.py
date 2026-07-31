@@ -51,8 +51,53 @@ def _censored_mask(df: pd.DataFrame, censoring: dict) -> np.ndarray:
     return np.asarray(margin < censoring["margin_threshold_dB"]) & np.isfinite(margin)
 
 
-def _fit_and_eval(model, train_df, val_df, features, target, sampler, censoring) -> tuple:
-    """Fit on train_df, predict val_df. Returns (idata, norm, metrics|None).
+def select_nondetects(nd_df: pd.DataFrame, detection: dict) -> tuple[pd.DataFrame, int]:
+    """Non-detection rows entering the likelihood, per the optional delta filter.
+
+    Returns (used_rows, n_excluded). With the filter on, rows whose at-depth
+    window shows energy (nd_delta_dB >= max_dB, or NaN delta) are excluded as
+    plausible clutter/mislocated-bed gaps. Rows always need a finite ceiling.
+    """
+    usable = nd_df[np.isfinite(nd_df["C_dB"].to_numpy())]
+    flt = detection["delta_filter"]
+    if not flt["enabled"]:
+        return usable, len(nd_df) - len(usable)
+    delta = usable["nd_delta_dB"].to_numpy()
+    keep = np.isfinite(delta) & (delta < flt["max_dB"])
+    return usable[keep], len(nd_df) - int(keep.sum())
+
+
+def _detection_block(train_df, nd_df, features, norm, target, detection):
+    """Assemble the detection dict + stacked non-detect design matrix rows."""
+    sel = train_df["obs_margin_dB"].to_numpy(dtype="float64")
+    return {
+        "sel_margin_dB": np.where(np.isfinite(sel), sel, np.inf),
+        "C_nd_dB": nd_df["C_dB"].to_numpy(dtype="float64"),
+        "target_norm": (norm[target]["mean"], norm[target]["std"]),
+        "theta_prior": detection["theta_prior"],
+        "tau_prior_sigma": detection["tau_prior_sigma"],
+    }
+
+
+def _nd_logscore(model, idata, nd_df, features, norm, target) -> float:
+    """Mean held-out log P(no detection) over non-detect grid points (proper score)."""
+    from scipy.special import logsumexp
+    from scipy.stats import norm as norm_dist
+
+    post = model._stacked_posterior(idata)
+    mean, std = norm[target]["mean"], norm[target]["std"]
+    mu_dB = model.mu_draws(post, _design_matrix(nd_df, features, norm)) * std + mean
+    theta = post["theta"].values[:, None]
+    tau = post["tau"].values[:, None]
+    s = np.sqrt(tau**2 + (post["sigma"].values[:, None] * std) ** 2)
+    z = (mu_dB - (nd_df["C_dB"].to_numpy()[None, :] - theta)) / s
+    logp = norm_dist.logcdf(z)
+    return float((logsumexp(logp, axis=0) - np.log(logp.shape[0])).mean())
+
+
+def _fit_and_eval(model, train_df, val_df, features, target, sampler, censoring,
+                  detection=None, nd_train=None) -> tuple:
+    """Fit on train_df (+ optional non-detections), predict val_df.
 
     Saturated (censored) training obs enter the fit as Tobit lower bounds.
     Point metrics (RMSE/MAE/coverage) use only uncensored validation points;
@@ -64,7 +109,13 @@ def _fit_and_eval(model, train_df, val_df, features, target, sampler, censoring)
     y = apply_normalizer(train_df[target].to_numpy(), norm[target])
     train_cens = _censored_mask(train_df, censoring)
     upper = np.where(train_cens, y, np.inf) if train_cens.any() else None
-    idata = model.fit(X, y, feature_names, upper=upper, **sampler)
+    det = None
+    if detection is not None and detection["enabled"]:
+        nd_train = nd_train if nd_train is not None else train_df.iloc[0:0]
+        det = _detection_block(train_df, nd_train, features, norm, target, detection)
+        if len(nd_train):
+            X = np.vstack([X, _design_matrix(nd_train, features, norm)])
+    idata = model.fit(X, y, feature_names, upper=upper, detection=det, **sampler)
 
     metrics = None
     if val_df is not None and len(val_df):
@@ -175,11 +226,32 @@ def run_train(config_path: str, model_name: str, out_dir: str | None = None,
         logger.info("Censoring enabled: %d/%d training obs flagged (margin < %.0f dB)",
                     n_cens_train, len(train_df), censoring["margin_threshold_dB"])
 
+    detection = tcfg["detection"]
+    nd_used = df.iloc[0:0]
+    n_nd_excluded = 0
+    if detection["enabled"]:
+        if "is_nondetect" not in df.columns:
+            raise ValueError("train.detection is enabled but split.parquet has no "
+                             "non-detection columns — re-run the split stage")
+        nd_all = df[df["is_nondetect"] & df[features].notna().all(axis=1)
+                    & thick_enough & (df["fold"] >= 0)]
+        nd_used, n_nd_excluded = select_nondetects(nd_all, detection)
+        logger.info("Detection enabled: %d non-detection grid points used, %d excluded "
+                    "(delta filter %s)", len(nd_used), n_nd_excluded,
+                    "on" if detection["delta_filter"]["enabled"] else "off")
+
     fold_metrics = []
     for k in folds:
-        _, _, m = _fit_and_eval(
+        fold_idata, fold_norm, m = _fit_and_eval(
             model, train_df[train_df["fold"] != k], train_df[train_df["fold"] == k],
-            features, target, cv_sampler, censoring)
+            features, target, cv_sampler, censoring,
+            detection=detection, nd_train=nd_used[nd_used["fold"] != k])
+        m["n_nd_train"] = int((nd_used["fold"] != k).sum()) if detection["enabled"] else 0
+        nd_val = nd_used[nd_used["fold"] == k]
+        if detection["enabled"] and len(nd_val):
+            m["nd_logscore"] = _nd_logscore(model, fold_idata, nd_val, features,
+                                            fold_norm, target)
+            m["n_nd_val"] = len(nd_val)
         m["fold"] = k
         fold_metrics.append(m)
         logger.info("CV fold %d: rmse=%.2f dB mae=%.2f dB coverage=%.2f logscore=%.3f "
@@ -205,8 +277,25 @@ def run_train(config_path: str, model_name: str, out_dir: str | None = None,
                    chains=tcfg["chains"], seed=tcfg["seed"])
     idata, norm, test_metrics = _fit_and_eval(
         model, train_df, test_df if len(test_df) else None, features, target, sampler,
-        censoring)
+        censoring, detection=detection, nd_train=nd_used)
     diagnostics = model.diagnostics(idata)
+
+    detection_info = {**detection}
+    if detection["enabled"]:
+        post = model._stacked_posterior(idata)
+        detection_info.update(
+            n_nondetect_used=len(nd_used), n_nondetect_excluded=int(n_nd_excluded),
+            theta_mean_dB=float(post["theta"].values.mean()),
+            theta_sd_dB=float(post["theta"].values.std()),
+            tau_mean_dB=float(post["tau"].values.mean()),
+            tau_sd_dB=float(post["tau"].values.std()),
+        )
+        nd_scores = [(m["nd_logscore"], m["n_nd_val"]) for m in fold_metrics
+                     if "nd_logscore" in m]
+        if nd_scores:
+            w = np.array([n for _, n in nd_scores], dtype="float64")
+            detection_info["cv_nd_logscore"] = float(
+                np.average([s for s, _ in nd_scores], weights=w))
     if test_metrics is None and config["split"]["test_cells"]:
         logger.warning("Test cells configured but contain no usable points")
 
@@ -245,6 +334,7 @@ def run_train(config_path: str, model_name: str, out_dir: str | None = None,
         "sampler": sampler,
         "cv_chains": tcfg["cv_chains"],
         "censoring": {**censoring, "n_train_censored": n_cens_train},
+        "detection": detection_info,
         "diagnostics": diagnostics,
     }
     section_hash = config_hash({"train": {**tcfg, "models": [entry]}, "model": model_name})

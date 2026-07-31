@@ -29,9 +29,11 @@ class BaseBayesianModel:
             self.features = list(features)
 
     def build(self, X: np.ndarray, y: np.ndarray, feature_names: list[str],
-              upper: np.ndarray | None = None):
+              upper: np.ndarray | None = None, detection: dict | None = None):
         """PyMC graph. `upper` (same length as y) makes the likelihood
-        right-censored (Tobit): y_i == upper_i contributes P(Y >= y_i)."""
+        right-censored (Tobit): y_i == upper_i contributes P(Y >= y_i).
+        With `detection`, X = observed rows stacked above non-detection rows
+        (see _apply_likelihood)."""
         raise NotImplementedError
 
     def mu_draws(self, posterior, X_new: np.ndarray) -> np.ndarray:
@@ -46,13 +48,59 @@ class BaseBayesianModel:
         return pm.Censored("obs", pm.Normal.dist(mu=mu, sigma=sigma),
                            lower=None, upper=upper, observed=y)
 
+    def _apply_likelihood(self, pm, mu, sigma, y: np.ndarray,
+                          upper: np.ndarray | None, detection: dict | None):
+        """Attach the observation likelihood and, optionally, detection terms.
+
+        Without `detection`, `mu` covers exactly the observed rows (as before).
+        With it, `mu` covers observed rows followed by non-detection rows, and
+        the model gains two dB-scale parameters:
+          theta — dB above the local noise floor needed for a bed pick
+          tau   — softness of that threshold (picker variability)
+        Detection terms (in dB space, un-normalizing mu in-graph):
+          observed i:      log Phi((margin_i - theta) / tau)            [selection]
+          non-detection j: log Phi((mu_dB_j - (C_j - theta)) / s)       [marginalized]
+        with s = sqrt(tau^2 + sigma_dB^2). pm.Potential terms are ignored by
+        forward samplers; prediction stays analytic via mu_draws.
+        """
+        if detection is None:
+            self._likelihood(pm, mu, sigma, y, upper)
+            return
+        import pytensor.tensor as pt
+
+        n_obs = len(y)
+        std_normal = pm.Normal.dist(0.0, 1.0)
+        self._likelihood(pm, mu[:n_obs], sigma, y, upper)
+
+        theta = pm.Normal("theta", mu=detection["theta_prior"][0],
+                          sigma=detection["theta_prior"][1])
+        tau = pm.HalfNormal("tau", sigma=detection["tau_prior_sigma"])
+
+        # Selection factor for observed traces. Non-finite margins contribute
+        # log 1 = 0, so they are dropped HERE, in numpy — an inf/NaN constant in
+        # the graph poisons the logp gradient and diverges every NUTS step.
+        sel = np.asarray(detection["sel_margin_dB"], dtype="float64")
+        sel = sel[np.isfinite(sel)]
+        if len(sel):
+            pm.Potential("detection_selection",
+                         pm.logcdf(std_normal, (sel - theta) / tau).sum())
+
+        c_nd = np.asarray(detection["C_nd_dB"], dtype="float64")
+        if len(c_nd):
+            mean, std = detection["target_norm"]
+            mu_nd_dB = mu[n_obs:] * std + mean
+            s = pt.sqrt(tau**2 + (sigma * std) ** 2)
+            pm.Potential("non_detection",
+                         pm.logcdf(std_normal, (mu_nd_dB - (c_nd - theta)) / s).sum())
+
     def fit(self, X: np.ndarray, y: np.ndarray, feature_names: list[str],
             draws: int, tune: int, chains: int, seed: int,
-            upper: np.ndarray | None = None) -> az.InferenceData:
+            upper: np.ndarray | None = None,
+            detection: dict | None = None) -> az.InferenceData:
         import pymc as pm
 
         self.feature_names = list(feature_names)
-        model = self.build(X, y, feature_names, upper=upper)
+        model = self.build(X, y, feature_names, upper=upper, detection=detection)
         with model:
             idata = pm.sample(draws=draws, tune=tune, chains=chains,
                               random_seed=seed, progressbar=False)

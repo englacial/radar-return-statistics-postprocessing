@@ -18,6 +18,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import pyarrow.parquet as pq
 from pyproj import Transformer
 from scipy.spatial import cKDTree
 
@@ -102,21 +103,66 @@ def assign_folds(cell_counts: dict[str, int], n_folds: int, seed: int) -> dict[s
     return assignment
 
 
-def _load_observations(sheet: str, stores: list[str], target: str, out_dir: Path) -> pd.DataFrame:
-    """Pooled radar observations for a sheet, in its native projected CRS.
+ICE_PERMITTIVITY = 3.17  # matches the upstream processing default
+_C = 299_792_458.0
 
-    Carries margin_dB = bed_power_dB - post_bed_noise_dB, the per-trace distance
-    of the bed pick above the noise floor (the SNR-saturation flag input).
+
+def compute_ceiling(surface_power_dB, surface_twtt, noise_dB, thickness_m,
+                    permittivity: float = ICE_PERMITTIVITY):
+    """Per-trace measurement ceiling: RSSNR if the bed peak equalled the noise floor.
+
+    C = surface_power - noise + 20*log10(r_surf / r_bed_eff), with the effective
+    bed range r_bed_eff = r_surf + thickness/sqrt(eps) (same geometric-spreading
+    correction as the upstream RSSNR definition).
+    """
+    r_surf = _C * np.asarray(surface_twtt, dtype="float64") / 2.0
+    r_bed_eff = r_surf + np.asarray(thickness_m, dtype="float64") / np.sqrt(permittivity)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        return (np.asarray(surface_power_dB, dtype="float64")
+                - np.asarray(noise_dB, dtype="float64")
+                + 20.0 * np.log10(r_surf / r_bed_eff))
+
+
+_OBS_COLS = ["latitude", "longitude", "bed_power_dB", "post_bed_noise_dB",
+             "post_bed_noise_interp_dB", "post_bed_peak_interp_dB",
+             "surface_power_dB", "surface_twtt",
+             "bed_pick_available", "bed_pick_attempted"]
+
+
+def _load_observations(sheet: str, stores: list[str], target: str, out_dir: Path) -> pd.DataFrame:
+    """Pooled attempted radar traces for a sheet, in its native projected CRS.
+
+    Rows are picked observations OR non-detections (attempted, no bed pick —
+    only present for stores augmented with include_nondetections). Carries:
+      margin_dB  = bed_power - at-depth noise (picked traces; the saturation input)
+      delta_dB   = at-depth window peak - median (non-detection classifier input)
+    The at-depth pick-free reference (post_bed_noise_interp_dB) is preferred,
+    falling back to post_bed_noise_dB for stores without it.
     """
     frames = []
     for store in stores:
         path = out_dir / store / f"{store}.parquet"
-        df = pd.read_parquet(path, columns=["latitude", "longitude", target,
-                                            "bed_power_dB", "post_bed_noise_dB"])
+        have = set(pq.read_schema(path).names)
+        cols = [c for c in [target, *_OBS_COLS] if c in have]
+        df = pd.read_parquet(path, columns=cols)
+        for c in [target, *_OBS_COLS]:
+            if c not in df:
+                df[c] = np.nan
         df["store"] = store
         frames.append(df)
-    obs = pd.concat(frames, ignore_index=True).dropna(subset=[target])
-    obs["margin_dB"] = obs["bed_power_dB"] - obs["post_bed_noise_dB"]
+    obs = pd.concat(frames, ignore_index=True)
+
+    # Old stores carry no pick flags: rows with a target are picked observations.
+    avail = obs["bed_pick_available"].astype("float64")
+    attempted = obs["bed_pick_attempted"].astype("float64").fillna(0.0) > 0
+    obs["picked"] = np.where(np.isnan(avail), obs[target].notna(), avail > 0)
+    keep = (obs["picked"] & obs[target].notna()) | (~obs["picked"] & attempted)
+    obs = obs[keep].reset_index(drop=True)
+
+    noise_ref = obs["post_bed_noise_interp_dB"].fillna(obs["post_bed_noise_dB"])
+    obs["noise_ref_dB"] = noise_ref
+    obs["margin_dB"] = obs["bed_power_dB"] - noise_ref
+    obs["delta_dB"] = obs["post_bed_peak_interp_dB"] - obs["post_bed_noise_interp_dB"]
     tx = Transformer.from_crs("EPSG:4326", REGION_CRS[sheet], always_xy=True)
     obs["x"], obs["y"] = tx.transform(obs["longitude"].to_numpy(), obs["latitude"].to_numpy())
     return obs
@@ -193,29 +239,62 @@ def run_split(config_path: str, out_dir: str | None = None, repo_dir: str = ".")
     values = np.full(len(df), np.nan)
     margins = np.full(len(df), np.nan)
     dists = np.full(len(df), np.nan)
+    nondetect = np.zeros(len(df), dtype=bool)
+    nd_delta = np.full(len(df), np.nan)
+    ceiling = np.full(len(df), np.nan)
     for sheet, stores in config["inputs"].items():
         for store in stores:
             augment_run_ids[store] = read_run_id(out_dir / store / f"{store}.parquet")
         obs = _load_observations(sheet, stores, target, out_dir)
         rows = (df["ice_sheet"] == sheet).to_numpy()
+        # Nearest *attempted* trace: a grid point takes whichever attempted trace
+        # is closest — a picked observation or a non-detection.
         idx, dist = nn_match(
             df.loc[rows, ["x", "y"]].to_numpy(),
             obs[["x", "y"]].to_numpy(),
             split_cfg["nn_cutoff_m"],
         )
         hit = idx >= 0
+        m = obs.iloc[idx[hit]]
+        picked = m["picked"].to_numpy()
+
         vals = np.full(len(idx), np.nan)
         marg = np.full(len(idx), np.nan)
-        vals[hit] = obs[target].to_numpy()[idx[hit]]
-        marg[hit] = obs["margin_dB"].to_numpy()[idx[hit]]
+        nd = np.zeros(len(idx), dtype=bool)
+        ndd = np.full(len(idx), np.nan)
+        ceil = np.full(len(idx), np.nan)
+        vals[hit] = np.where(picked, m[target].to_numpy(), np.nan)
+        marg[hit] = np.where(picked, m["margin_dB"].to_numpy(), np.nan)
+        nd[hit] = ~picked
+        ndd[hit] = np.where(~picked, m["delta_dB"].to_numpy(), np.nan)
+        # Ceiling: for picked traces it's exactly target + margin; for
+        # non-detections it's rebuilt from surface power, geometry (BedMachine
+        # thickness at the grid point), and the pick-free at-depth noise.
+        thickness = df.loc[rows, "bedmachine_thickness_m"].to_numpy()
+        ceil_nd = compute_ceiling(m["surface_power_dB"].to_numpy(),
+                                  m["surface_twtt"].to_numpy(),
+                                  m["noise_ref_dB"].to_numpy(),
+                                  thickness[hit])
+        ceil[hit] = np.where(picked,
+                             m[target].to_numpy() + m["margin_dB"].to_numpy(),
+                             ceil_nd)
+
         values[rows] = vals
         margins[rows] = marg
         dists[rows] = dist
-        logger.info("Split %s: %d/%d grid points matched an observation (cutoff %.0f m)",
-                    sheet, int(hit.sum()), int(rows.sum()), split_cfg["nn_cutoff_m"])
+        nondetect[rows] = nd
+        nd_delta[rows] = ndd
+        ceiling[rows] = ceil
+        logger.info("Split %s: %d/%d grid points matched (%d observed, %d non-detections; "
+                    "cutoff %.0f m)", sheet, int(hit.sum()), int(rows.sum()),
+                    int((nd[hit] == False).sum()), int(nd.sum()),  # noqa: E712
+                    split_cfg["nn_cutoff_m"])
     df[target] = values
     df["obs_margin_dB"] = margins
     df["obs_dist_m"] = dists
+    df["is_nondetect"] = nondetect
+    df["nd_delta_dB"] = nd_delta
+    df["C_dB"] = ceiling
 
     # Blocking cells, test set, folds.
     df["cell_id"] = ""

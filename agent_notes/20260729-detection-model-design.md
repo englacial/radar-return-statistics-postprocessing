@@ -198,6 +198,39 @@ peak-over-median delta median +9.5 dB (picked traces).
   everywhere record_end_twtt exists — essential for deep-bed Greenland, where
   low headroom will be common rather than rare.
 
+## Correction — the 2014/2016 tail offset is an end-of-record taper (2026-07-30)
+
+Crossover radargrams (xOPR, one-off scratchpad scripts) + a 1D fast-time
+profile at a 2014/2018 crossover show the below-bed power in 2014/2016 is
+FLAT at its floor from ~25 us all the way to ~end-5 us, then plunges ~45 dB
+inside the final ~5 us — an end-of-record taper in those CSARP products.
+So the ~+14 dB "offset" is the record-tail metric biased LOW (it sits inside
+the taper), not an elevated at-depth floor. 2018 and low-altitude 2012 have
+no taper (offsets ~+1.5 dB). Colocated crossovers confirm offsets are
+system/processing properties, not location; high-altitude 2012 (+11 to +13)
+and rough-bed sites (both-seasons +22 to +25) are genuine slow-decay clutter.
+
+Consequences:
+- Prefer post_bed_noise_interp_dB as the primary noise reference — robust to
+  the taper AND it measures noise+clutter at the depth where detection
+  happens (clutter sensitivity is a feature for detection modeling).
+- record_tail is only trustworthy where no taper exists; upstream should
+  either move the tail window inward (e.g. end-10 to end-5 us) or flag
+  tapered records. Headroom guard (>20 us) still applies for coda.
+- The taper explains the season-dependence cleanly; hierarchical theta_c
+  remains for residual picker/system differences.
+
+## Resolution — shifted tail window (snapshot CS9HEDFGE8FXDHVC9KM0, 2026-07-30)
+
+With the tail window moved off the end-of-record taper, per-season median
+(at-depth − tail) offsets collapse to agreement: 2012 +0.4, 2014 +0.6,
+2016 +0.8, 2018 +0.8 dB (was +6/+14/+15/+1.5). The 2014 crossover frame's
+new tail median (−164.6 dB) matches the flat below-bed floor from the 1D
+profile (−164). The residual +3.5 dB on 2012's high-altitude segments is
+the genuine clutter component, now cleanly separated. The two-metric design
+works as intended: at-depth = detection reference, tail = thermal floor,
+difference = per-trace clutter estimate (feeds the pi-mixture separation).
+
 ## Identifiability / validation
 
 - theta vs mu intercept: separable because C_i varies trace-to-trace and the

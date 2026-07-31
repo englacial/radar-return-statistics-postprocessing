@@ -7,7 +7,7 @@ store:
 
 icechunk:
   branch: "main"
-  snapshot_id: "690DKWTHN1BQDZYDJEW0"  # pinned 2026-07-30: + record_end_twtt
+  snapshot_id: "CS9HEDFGE8FXDHVC9KM0"  # pinned 2026-07-30: tail noise window shifted off the end-of-record taper
 
 extract:
   qc_only: true

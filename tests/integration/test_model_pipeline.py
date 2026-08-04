@@ -74,8 +74,11 @@ def _make_stores(out_dir, grid):
         lon, lat = Transformer.from_crs(SHEET_CRS[sheet], "EPSG:4326",
                                         always_xy=True).transform(x, y)
         margin = rng.uniform(0, 40, len(picked))  # some obs land under the 10 dB flag
+        season = {"ase": "2014_Antarctica_DC8", "utig": "2016_Antarctica_BaslerJKB",
+                  "greenland": "2017_Greenland_P3"}[store]
         obs = pd.DataFrame({
             "latitude": lat, "longitude": lon,
+            "collection": season,
             "required_surface_snr_dB": _true_law(picked) + rng.normal(0, 1.0, len(picked)),
             "bed_power_dB": -100.0 + margin,
             "post_bed_noise_dB": -100.0,
@@ -96,6 +99,7 @@ def _make_stores(out_dir, grid):
                                                   always_xy=True).transform(jx, jy)
             nd = pd.DataFrame({
                 "latitude": nd_lat, "longitude": nd_lon,
+                "collection": season,
                 "required_surface_snr_dB": np.nan, "bed_power_dB": np.nan,
                 "post_bed_noise_dB": np.nan,
                 "bed_pick_available": False, "bed_pick_attempted": True,
@@ -124,6 +128,7 @@ def pipeline(tmp_path_factory):
                   "test_cells": ["ant:41:-181"]},
         "train": {"draws": 150, "tune": 150, "chains": 1, "cv_chains": 1, "seed": 0,
                   "features": FEATURES,
+                  "indicators": ["is_greenland", "is_utig"],
                   "censoring": {"enabled": True, "margin_threshold_dB": 10},
                   "detection": {"enabled": True,
                                 "delta_filter": {"enabled": True, "max_dB": 8}},
@@ -141,8 +146,16 @@ class TestSplit:
         out_dir, config, _, result, _ = pipeline
         df = pd.read_parquet(out_dir / "model" / "split.parquet")
         for col in ["required_surface_snr_dB", "obs_margin_dB", "obs_dist_m",
-                    "cell_id", "fold", "is_test", "is_nondetect", "nd_delta_dB", "C_dB"]:
+                    "cell_id", "fold", "is_test", "is_nondetect", "nd_delta_dB", "C_dB",
+                    "collection", "institution"]:
             assert col in df.columns
+        # Institution derived from the matched trace's season name.
+        matched = df[df["collection"].notna()]
+        assert set(matched["institution"].unique()) <= {"UTIG", "CReSIS"}
+        utig_rows = matched[matched["institution"] == "UTIG"]
+        assert len(utig_rows) > 0
+        assert (utig_rows["ice_sheet"] == "antarctic").all()
+        assert utig_rows["collection"].str.endswith("_BaslerJKB").all()
         nd = df[df["is_nondetect"]]
         assert len(nd) > 0
         assert nd["required_surface_snr_dB"].isna().all()
@@ -186,6 +199,7 @@ class TestTrain:
         out_dir, _, _, _, result = pipeline
         metrics = json.loads((out_dir / "model" / "linear" / "metrics.json").read_text())
         assert metrics["model"] == "linear"
+        assert metrics["indicators"] == ["is_greenland", "is_utig"]
         assert len(metrics["folds"]) == 3
         for key in ("rmse_dB", "mae_dB", "coverage_1sigma", "logscore_dB"):
             assert key in metrics["pooled_cv"]

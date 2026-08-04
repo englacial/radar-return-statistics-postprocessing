@@ -33,10 +33,30 @@ def _metrics(y_true: np.ndarray, mu_mean: np.ndarray, pred_std: np.ndarray) -> d
     }
 
 
-def _design_matrix(df: pd.DataFrame, features: list[str], norm: dict) -> np.ndarray:
-    """Z-scored features + raw is_greenland indicator as the last column."""
+INDICATOR_BUILDERS = {
+    # Raw 0/1 columns appended (un-scaled) after the z-scored features. At
+    # full-grid prediction time is_utig is 0 everywhere: institution is a
+    # property of the *measurement*, so maps are referenced to CReSIS.
+    "is_greenland": lambda df: (df["ice_sheet"] == "greenland"),
+    "is_utig": lambda df: (df.get("institution", pd.Series(index=df.index)) == "UTIG"),
+}
+
+
+def add_indicator_columns(df: pd.DataFrame, indicators: list[str]) -> None:
+    unknown = [i for i in indicators if i not in INDICATOR_BUILDERS]
+    if unknown:
+        raise ValueError(f"Unknown train.indicators {unknown}; "
+                         f"supported: {sorted(INDICATOR_BUILDERS)}")
+    for name in indicators:
+        df[name] = INDICATOR_BUILDERS[name](df).astype("float64")
+
+
+def _design_matrix(df: pd.DataFrame, features: list[str], norm: dict,
+                   indicators: tuple[str, ...] = ("is_greenland",)) -> np.ndarray:
+    """Z-scored features + raw 0/1 indicator columns appended."""
     cols = [apply_normalizer(df[f].to_numpy(), norm[f]) for f in features]
-    cols.append(df["is_greenland"].to_numpy(dtype="float64"))
+    for name in indicators:
+        cols.append(df[name].to_numpy(dtype="float64"))
     return np.column_stack(cols)
 
 
@@ -79,14 +99,15 @@ def _detection_block(train_df, nd_df, features, norm, target, detection):
     }
 
 
-def _nd_logscore(model, idata, nd_df, features, norm, target) -> float:
+def _nd_logscore(model, idata, nd_df, features, norm, target,
+                 indicators=("is_greenland",)) -> float:
     """Mean held-out log P(no detection) over non-detect grid points (proper score)."""
     from scipy.special import logsumexp
     from scipy.stats import norm as norm_dist
 
     post = model._stacked_posterior(idata)
     mean, std = norm[target]["mean"], norm[target]["std"]
-    mu_dB = model.mu_draws(post, _design_matrix(nd_df, features, norm)) * std + mean
+    mu_dB = model.mu_draws(post, _design_matrix(nd_df, features, norm, indicators)) * std + mean
     theta = post["theta"].values[:, None]
     tau = post["tau"].values[:, None]
     s = np.sqrt(tau**2 + (post["sigma"].values[:, None] * std) ** 2)
@@ -96,7 +117,8 @@ def _nd_logscore(model, idata, nd_df, features, norm, target) -> float:
 
 
 def _fit_and_eval(model, train_df, val_df, features, target, sampler, censoring,
-                  detection=None, nd_train=None) -> tuple:
+                  detection=None, nd_train=None,
+                  indicators=("is_greenland",)) -> tuple:
     """Fit on train_df (+ optional non-detections), predict val_df.
 
     Saturated (censored) training obs enter the fit as Tobit lower bounds.
@@ -104,8 +126,8 @@ def _fit_and_eval(model, train_df, val_df, features, target, sampler, censoring,
     logscore_dB is the censoring-aware predictive log score over all of them.
     """
     norm = fit_normalizer(train_df, [*features, target])
-    feature_names = [*features, "is_greenland"]
-    X = _design_matrix(train_df, features, norm)
+    feature_names = [*features, *indicators]
+    X = _design_matrix(train_df, features, norm, indicators)
     y = apply_normalizer(train_df[target].to_numpy(), norm[target])
     train_cens = _censored_mask(train_df, censoring)
     upper = np.where(train_cens, y, np.inf) if train_cens.any() else None
@@ -114,13 +136,13 @@ def _fit_and_eval(model, train_df, val_df, features, target, sampler, censoring,
         nd_train = nd_train if nd_train is not None else train_df.iloc[0:0]
         det = _detection_block(train_df, nd_train, features, norm, target, detection)
         if len(nd_train):
-            X = np.vstack([X, _design_matrix(nd_train, features, norm)])
+            X = np.vstack([X, _design_matrix(nd_train, features, norm, indicators)])
     idata = model.fit(X, y, feature_names, upper=upper, detection=det, **sampler)
 
     metrics = None
     if val_df is not None and len(val_df):
         val_cens = _censored_mask(val_df, censoring)
-        Xv = _design_matrix(val_df, features, norm)
+        Xv = _design_matrix(val_df, features, norm, indicators)
         y_true = val_df[target].to_numpy()
         mu_mean, _, pred_std = model.predict(idata, Xv)
         mu_dB = invert_normalizer(mu_mean, norm[target])
@@ -197,7 +219,11 @@ def run_train(config_path: str, model_name: str, out_dir: str | None = None,
 
     df = pd.read_parquet(model_dir / "split.parquet")
     split_manifest = json.loads((model_dir / "split.manifest.json").read_text())
-    df["is_greenland"] = (df["ice_sheet"] == "greenland").astype("float64")
+    indicators = tuple(tcfg["indicators"])
+    if "is_utig" in indicators and "institution" not in df.columns:
+        raise ValueError("train.indicators includes is_utig but split.parquet has no "
+                         "institution column — re-run the split stage")
+    add_indicator_columns(df, list(indicators))
 
     usable = df[target].notna() & df[features].notna().all(axis=1)
     # No training or prediction on ice BedMachine considers thinner than the cutoff.
@@ -245,12 +271,13 @@ def run_train(config_path: str, model_name: str, out_dir: str | None = None,
         fold_idata, fold_norm, m = _fit_and_eval(
             model, train_df[train_df["fold"] != k], train_df[train_df["fold"] == k],
             features, target, cv_sampler, censoring,
-            detection=detection, nd_train=nd_used[nd_used["fold"] != k])
+            detection=detection, nd_train=nd_used[nd_used["fold"] != k],
+            indicators=indicators)
         m["n_nd_train"] = int((nd_used["fold"] != k).sum()) if detection["enabled"] else 0
         nd_val = nd_used[nd_used["fold"] == k]
         if detection["enabled"] and len(nd_val):
             m["nd_logscore"] = _nd_logscore(model, fold_idata, nd_val, features,
-                                            fold_norm, target)
+                                            fold_norm, target, indicators)
             m["n_nd_val"] = len(nd_val)
         m["fold"] = k
         fold_metrics.append(m)
@@ -277,7 +304,7 @@ def run_train(config_path: str, model_name: str, out_dir: str | None = None,
                    chains=tcfg["chains"], seed=tcfg["seed"])
     idata, norm, test_metrics = _fit_and_eval(
         model, train_df, test_df if len(test_df) else None, features, target, sampler,
-        censoring, detection=detection, nd_train=nd_used)
+        censoring, detection=detection, nd_train=nd_used, indicators=indicators)
     diagnostics = model.diagnostics(idata)
 
     detection_info = {**detection}
@@ -303,7 +330,7 @@ def run_train(config_path: str, model_name: str, out_dir: str | None = None,
     predictable = df[features].notna().all(axis=1) & thick_enough
     pred_df = df[predictable]
     mu_mean, mu_std, pred_std = model.predict(
-        idata, _design_matrix(pred_df, features, norm),
+        idata, _design_matrix(pred_df, features, norm, indicators),
         batch_size=tcfg["predict_batch_size"])
     full = {name: np.full(len(df), np.nan) for name in ("pred_mean", "pred_std_mu", "pred_std")}
     full["pred_mean"][predictable.to_numpy()] = invert_normalizer(mu_mean, norm[target])
@@ -318,7 +345,7 @@ def run_train(config_path: str, model_name: str, out_dir: str | None = None,
     write_predictions_zarr(df, layers, split_manifest["geometry"], zarr_path)
 
     # Self-describing posterior: normalizer + features ride along as attrs.
-    idata.attrs["features"] = json.dumps([*features, "is_greenland"])
+    idata.attrs["features"] = json.dumps([*features, *indicators])
     idata.attrs["normalizer"] = json.dumps(norm)
     idata.attrs["target"] = target
     posterior_path = run_dir / "posterior.nc"
@@ -328,6 +355,7 @@ def run_train(config_path: str, model_name: str, out_dir: str | None = None,
         "model": model_name,
         "split_run_id": split_manifest["run_id"],
         "features": features,
+        "indicators": list(indicators),
         "folds": fold_metrics,
         "pooled_cv": pooled_cv,
         "test": test_metrics,

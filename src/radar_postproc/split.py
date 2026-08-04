@@ -123,10 +123,19 @@ def compute_ceiling(surface_power_dB, surface_twtt, noise_dB, thickness_m,
                 + 20.0 * np.log10(r_surf / r_bed_eff))
 
 
-_OBS_COLS = ["latitude", "longitude", "bed_power_dB", "post_bed_noise_dB",
+_OBS_COLS = ["latitude", "longitude", "collection", "bed_power_dB", "post_bed_noise_dB",
              "post_bed_noise_interp_dB", "post_bed_peak_interp_dB",
              "surface_power_dB", "surface_twtt",
              "bed_pick_available", "bed_pick_attempted"]
+
+_UTIG_SUFFIXES = ("_BaslerJKB", "_BaslerMKB")
+
+
+def institution_of(collection) -> str | None:
+    """Producing institution for an OPR season name (UTIG Basler vs CReSIS)."""
+    if not isinstance(collection, str) or not collection:
+        return None
+    return "UTIG" if collection.endswith(_UTIG_SUFFIXES) else "CReSIS"
 
 
 def _load_observations(sheet: str, stores: list[str], target: str, out_dir: Path) -> pd.DataFrame:
@@ -159,6 +168,7 @@ def _load_observations(sheet: str, stores: list[str], target: str, out_dir: Path
     keep = (obs["picked"] & obs[target].notna()) | (~obs["picked"] & attempted)
     obs = obs[keep].reset_index(drop=True)
 
+    obs["institution"] = obs["collection"].map(institution_of)
     noise_ref = obs["post_bed_noise_interp_dB"].fillna(obs["post_bed_noise_dB"])
     obs["noise_ref_dB"] = noise_ref
     obs["margin_dB"] = obs["bed_power_dB"] - noise_ref
@@ -242,6 +252,8 @@ def run_split(config_path: str, out_dir: str | None = None, repo_dir: str = ".")
     nondetect = np.zeros(len(df), dtype=bool)
     nd_delta = np.full(len(df), np.nan)
     ceiling = np.full(len(df), np.nan)
+    collection = np.full(len(df), None, dtype=object)
+    institution = np.full(len(df), None, dtype=object)
     for sheet, stores in config["inputs"].items():
         for store in stores:
             augment_run_ids[store] = read_run_id(out_dir / store / f"{store}.parquet")
@@ -279,12 +291,19 @@ def run_split(config_path: str, out_dir: str | None = None, repo_dir: str = ".")
                              m[target].to_numpy() + m["margin_dB"].to_numpy(),
                              ceil_nd)
 
+        coll = np.full(len(idx), None, dtype=object)
+        inst = np.full(len(idx), None, dtype=object)
+        coll[hit] = m["collection"].to_numpy(dtype=object)
+        inst[hit] = m["institution"].to_numpy(dtype=object)
+
         values[rows] = vals
         margins[rows] = marg
         dists[rows] = dist
         nondetect[rows] = nd
         nd_delta[rows] = ndd
         ceiling[rows] = ceil
+        collection[rows] = coll
+        institution[rows] = inst
         logger.info("Split %s: %d/%d grid points matched (%d observed, %d non-detections; "
                     "cutoff %.0f m)", sheet, int(hit.sum()), int(rows.sum()),
                     int((nd[hit] == False).sum()), int(nd.sum()),  # noqa: E712
@@ -295,6 +314,10 @@ def run_split(config_path: str, out_dir: str | None = None, repo_dir: str = ".")
     df["is_nondetect"] = nondetect
     df["nd_delta_dB"] = nd_delta
     df["C_dB"] = ceiling
+    # Provenance of the matched trace (season + producing institution), for
+    # system-effect analyses and the optional is_utig indicator.
+    df["collection"] = collection
+    df["institution"] = institution
 
     # Blocking cells, test set, folds.
     df["cell_id"] = ""

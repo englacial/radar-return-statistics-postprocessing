@@ -37,6 +37,7 @@ split:
   n_folds: 5
   seed: 42
   test_cells: ["ant:-5:1", "ant:-3:-2", "ant:1:-3", "ant:2:-2", "ant:2:0", "grl:0:-6", "grl:1:-4", "grl:0:-2"] # pick from outputs/model/cell_maps/, e.g. ["ant:-3:1", "grl:0:-5"]
+  exclude_collections: [2017_Antarctica_Basler, 2013_Greenland_P3]  # crossover-identified calibration outliers
 
 train:
   seed: 42
@@ -49,6 +50,11 @@ train:
   censoring:
     enabled: true             # Tobit likelihood: saturated obs enter as lower bounds
     margin_threshold_dB: 10   # flag obs whose bed pick is within this of the noise floor
+  detection:
+    enabled: true             # learned soft threshold (theta, tau) + matched non-detections
+    delta_filter:
+      enabled: true           # exclude non-detections whose at-depth window shows energy
+      max_dB: 8
   features: [bedmachine_thickness_m, era5_t2m_mean_K, itslive_v_m_yr, ghf_mW_m2]
   models:
     - name: linear

@@ -116,6 +116,8 @@ def load_model_config(config_path: str | Path) -> dict:
     split.setdefault("n_folds", 5)
     split.setdefault("seed", 42)
     split.setdefault("test_cells", [])  # e.g. ["ant:-3:1"]; empty -> warning, no test set
+    # Collections dropped entirely before matching (crossover-identified outliers).
+    split.setdefault("exclude_collections", [])
 
     # Bayesian model training / prediction.
     config.setdefault("train", {})

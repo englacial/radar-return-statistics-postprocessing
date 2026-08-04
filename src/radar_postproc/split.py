@@ -138,7 +138,8 @@ def institution_of(collection) -> str | None:
     return "UTIG" if collection.endswith(_UTIG_SUFFIXES) else "CReSIS"
 
 
-def _load_observations(sheet: str, stores: list[str], target: str, out_dir: Path) -> pd.DataFrame:
+def _load_observations(sheet: str, stores: list[str], target: str, out_dir: Path,
+                       exclude_collections: tuple = ()) -> pd.DataFrame:
     """Pooled attempted radar traces for a sheet, in its native projected CRS.
 
     Rows are picked observations OR non-detections (attempted, no bed pick —
@@ -160,6 +161,15 @@ def _load_observations(sheet: str, stores: list[str], target: str, out_dir: Path
         df["store"] = store
         frames.append(df)
     obs = pd.concat(frames, ignore_index=True)
+
+    # Season exclusion (e.g. crossover-identified calibration outliers): drop
+    # these collections' traces entirely — observations AND non-detections —
+    # before matching, so nearby kept seasons can fill in where possible.
+    if exclude_collections:
+        n0 = len(obs)
+        obs = obs[~obs["collection"].isin(list(exclude_collections))].reset_index(drop=True)
+        logger.info("Split %s: excluded %d traces from collections %s",
+                    sheet, n0 - len(obs), list(exclude_collections))
 
     # Old stores carry no pick flags: rows with a target are picked observations.
     avail = obs["bed_pick_available"].astype("float64")
@@ -257,7 +267,8 @@ def run_split(config_path: str, out_dir: str | None = None, repo_dir: str = ".")
     for sheet, stores in config["inputs"].items():
         for store in stores:
             augment_run_ids[store] = read_run_id(out_dir / store / f"{store}.parquet")
-        obs = _load_observations(sheet, stores, target, out_dir)
+        obs = _load_observations(sheet, stores, target, out_dir,
+                                 exclude_collections=tuple(split_cfg["exclude_collections"]))
         rows = (df["ice_sheet"] == sheet).to_numpy()
         # Nearest *attempted* trace: a grid point takes whichever attempted trace
         # is closest — a picked observation or a non-detection.

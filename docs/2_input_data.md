@@ -6,7 +6,7 @@ This dataset has several advantages over past efforts:
 
 1. It's a very large dataset, spanning more than a decade of surveying across both ice sheets and multiple institutions
 2. It contains data from multiple radar sounder instruments, including significant overlaps to do cross-comparisons between them
-3. All of the data is processed through the same pipeline, which reduces the changes of processing artifacts significantly biasing results
+3. All of the data is processed through the same pipeline, which reduces the chances of processing artifacts significantly biasing results
 
 ## Dataset access and augmentation
 
@@ -27,7 +27,7 @@ Traces with radar-derived thickness under 100 m are dropped. (This is configured
 
 ## Do the surveys agree with each other?
 
-The full dataset represents more than a decade of data spanning multiple radar instrument generations and two different lineages (CReSIS's MCoRDS and UTIG's HiCARS/MARFA radars). Before pooling this data, it's worth asking whether they measure the same thing. Wherver these flight lines cross (defined as within 500 m here), we can look for biases between seasons.
+The full dataset represents more than a decade of data spanning multiple radar instrument generations and two different lineages (CReSIS's MCoRDS and UTIG's HiCARS/MARFA radars). Before pooling this data, it's worth asking whether they measure the same thing. Wherever these flight lines cross (defined as within 500 m here), we can look for biases between seasons.
 
 Each cell shows the median difference in RSSNR and the standard deviation of those differences. Diagonal elements represent self-intersections. The standard deviation of these self-intersections provides some metric of the noise level within the dataset.
 
@@ -39,14 +39,15 @@ Each cell shows the median difference in RSSNR and the standard deviation of tho
 
 To reproduce these figures:
 ```
-# If you haven't yet, you'll need to run the augmentation pipeline:
-uv run snakemake --cores 4 all
+# If you haven't yet, you'll need to run the augmentation pipeline for both stores:
+uv run snakemake --cores 4 --config store=antarctica
+uv run snakemake --cores 4 --config store=greenland
 # Then:
 uv run python scripts/season_crossover_matrix.py
 cp outputs/model/analysis/season_crossover_matrix_*.png docs/figures/
 ```
 
-There are two notable outlier seasons: `2017_Antarctica_BaslerJKB` and `2013_Greenland_P3`. These two seasons show significant stitching artifacts that likely explain these offsets. They are excluded from further analysis for now.
+There are two notable outlier seasons: `2017_Antarctica_Basler` and `2013_Greenland_P3`. These two seasons show significant stitching artifacts that likely explain these offsets. They are excluded from further analysis for now.
 
 > **Stitching artifacts:** Both the MCoRDS and HiCARS/MARFA systems rely on some sort of stitching across either multiple distinct waveforms or ADC channels to achieve their roughly ~100-120 dB dynamic range. If this stitching is incorrectly calibrated, it can artificially make the bed return stronger or weaker relative to the surface than it actually is. More effectively detecting and filtering this out is an ongoing area of work.
 
@@ -59,8 +60,15 @@ Jumping ahead a little bit (this part depends on a model to train), another way 
 
 To reproduce this figure:
 ```
-# TODO
+# Requires the trained pipeline (see the Results section of the model doc).
+# Re-runs the 5-fold spatially-blocked CV collecting out-of-fold predictions
+# under the current config (~10 minutes):
+uv run python scripts/residual_audit.py
+cp outputs/model/analysis/residuals_by_season.png docs/figures/
 ```
+
+Note that this figure reflects the current configuration, in which the two
+outlier seasons above are already excluded.
 
 There is certainly room for improvement here (or perhaps just further calibration), but there is no obvious pattern of dramatic outlier seasons or instruments.
 
@@ -69,7 +77,7 @@ There is certainly room for improvement here (or perhaps just further calibratio
 
 Predictions live on a regular ~5 km grid derived from the BedMachine ice mask: 1334×1334 cells (5 km, EPSG:3031) for Antarctica and 556×310 (4.95 km, EPSG:3413) for Greenland — about 616k ice grid points (541k + 75k). Each grid point takes its nearest *attempted* radar trace within 1 km: a picked trace contributes an observed RSSNR (and its noise-floor margin), an unpicked one marks the grid point as a non-detection and contributes its detectability ceiling.
 
-Radar observations are strongly correlated along flight lines. We use spatial blocking (Roberts et al., 2016) to mitigate the effects of spatial correlation. The input data is divided into 500 km square cells in each sheet's projected coordinates. Eight hand-picked cells are held out entirely as a test set and the remaining cells are assigned randomly to five cross-validation folds. Test cell assignments are shown below.
+Radar observations are strongly correlated along flight lines. We use spatial blocking (Roberts et al., 2017) to mitigate the effects of spatial correlation. The input data is divided into 500 km square cells in each sheet's projected coordinates. Eight hand-picked cells are held out entirely as a test set and the remaining cells are assigned randomly to five cross-validation folds. Test cell assignments are shown below.
 
 ![Antarctic blocking cells](figures/cells_antarctic.png)
 *Antarctic 500 km blocking cells with per-cell observation counts; red outlines are held-out test cells.*
@@ -79,5 +87,7 @@ Radar observations are strongly correlated along flight lines. We use spatial bl
 
 To reproduce these figures:
 ```
-# TODO
+# The split stage draws the cell maps as a side product:
+uv run snakemake --cores 4 --rerun-triggers=mtime -- outputs/model/split.parquet
+cp outputs/model/cell_maps/cells_antarctic.png outputs/model/cell_maps/cells_greenland.png docs/figures/
 ```

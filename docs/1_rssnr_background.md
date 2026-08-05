@@ -50,7 +50,7 @@ $ \text{RSSNR} = \frac{P_\text{surface}}{P_\text{bed}} \frac{h^2}{(h+d/n)^2} \ap
 
 For a high-altitude system ($h \gg d$), the RSSNR tells us the SNR we need at the surface in order to have 0 dB SNR at the bed. If we have some target SNR on the bed (say, 10 dB), then we add that to our RSSNR to get the desired surface SNR.
 
-This works for low-altitude sytems as well, but we additionally have to correct for the geometric spreading term. The plot below shows the magnitude of this correction. As you can see, it's extremely important for systems flying at < 1 km, but it can mostly be ignored for anything above 10 km.
+This works for low-altitude systems as well, but we additionally have to correct for the geometric spreading term. The plot below shows the magnitude of this correction. As you can see, it's extremely important for systems flying at < 1 km, but it can mostly be ignored for anything above 10 km.
 
 ![RSSNR Geometric Spreading with Altitude](figures/rssnr_altitude.png)
 

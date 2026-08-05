@@ -1,0 +1,83 @@
+# Open Polar Radar provides a diverse set of source data
+
+This repository is downstream of our [radar-return-statistics](https://github.com/englacial/radar-return-statistics) repository, which extracts various metrics from every available line in the [Open Polar Radar](https://openpolarradar.org/) catalog, using [xOPR](https://docs.englacial.org/xopr/).
+
+This dataset has several advantages over past efforts:
+
+1. It's a very large dataset, spanning more than a decade of surveying across both ice sheets and multiple institutions
+2. It contains data from multiple radar sounder instruments, including significant overlaps to do cross-comparisons between them
+3. All of the data is processed through the same pipeline, which reduces the changes of processing artifacts significantly biasing results
+
+## Dataset access and augmentation
+
+Per-trace radar metrics come from the Open Polar Radar archive via two [icechunk](https://icechunk.io/) stores, read at pinned snapshots for reproducibility. For details on accessing the datasets, see the [Data Access docs in radar-return-statistics](https://github.com/englacial/radar-return-statistics/blob/main/docs/data_access.md).
+
+Each trace carries the RSSNR target plus noise-floor diagnostics. The augment stage joins four gridded covariates at every trace location:
+* **BedMachine** thickness (v4 Antarctica / v6 Greenland)
+* **ERA5** 1990–2019 mean 2 m air temperature
+* **ITS_LIVE** surface speed
+* **geothermal heat flux** (Lösing & Ebbing 2021 / Colgan et al. 2022)
+
+For details and citations of these datasets, see [Data Sources](data_sources.md).
+
+Traces with radar-derived thickness under 100 m are dropped. (This is configured in `config/{antarctica,greenland}.yaml`.)
+
+**Non-detections** are deliberately included. These are defined as locations where there is no bed pick available but there are bed picks both before and after in the same radar segment. This is used as a heuristic to filter out anything where bed picking simply hasn't been done.
+
+
+## Do the surveys agree with each other?
+
+The full dataset represents more than a decade of data spanning multiple radar instrument generations and two different lineages (CReSIS's MCoRDS and UTIG's HiCARS/MARFA radars). Before pooling this data, it's worth asking whether they measure the same thing. Wherver these flight lines cross (defined as within 500 m here), we can look for biases between seasons.
+
+Each cell shows the median difference in RSSNR and the standard deviation of those differences. Diagonal elements represent self-intersections. The standard deviation of these self-intersections provides some metric of the noise level within the dataset.
+
+![Antarctic season crossover matrix](figures/season_crossover_matrix_antarctica.png)
+*Antarctic median (row − col) RSSNR at season crossovers. Gray = fewer than 30 pairs.*
+
+![Greenland season crossover matrix](figures/season_crossover_matrix_greenland.png)
+*Greenland median (row − col) RSSNR at season crossovers.*
+
+To reproduce these figures:
+```
+# If you haven't yet, you'll need to run the augmentation pipeline:
+uv run snakemake --cores 4 all
+# Then:
+uv run python scripts/season_crossover_matrix.py
+cp outputs/model/analysis/season_crossover_matrix_*.png docs/figures/
+```
+
+There are two notable outlier seasons: `2017_Antarctica_BaslerJKB` and `2013_Greenland_P3`. These two seasons show significant stitching artifacts that likely explain these offsets. They are excluded from further analysis for now.
+
+> **Stitching artifacts:** Both the MCoRDS and HiCARS/MARFA systems rely on some sort of stitching across either multiple distinct waveforms or ADC channels to achieve their roughly ~100-120 dB dynamic range. If this stitching is incorrectly calibrated, it can artificially make the bed return stronger or weaker relative to the surface than it actually is. More effectively detecting and filtering this out is an ongoing area of work.
+
+The good news is that most seasons agree with each other reasonably well, even across the two institutions.
+
+Jumping ahead a little bit (this part depends on a model to train), another way to look at this is to compare against out-of-fold residuals. (Note that folds are spatially blocked. More on this in the next section.)
+
+![Residuals by season](figures/residuals_by_season.png)
+*Out-of-fold residuals by season. The box represents the inter-quartile range and the extents of the whiskers are the 2nd and 98th percentiles.*
+
+To reproduce this figure:
+```
+# TODO
+```
+
+There is certainly room for improvement here (or perhaps just further calibration), but there is no obvious pattern of dramatic outlier seasons or instruments.
+
+
+## Building the training set
+
+Predictions live on a regular ~5 km grid derived from the BedMachine ice mask: 1334×1334 cells (5 km, EPSG:3031) for Antarctica and 556×310 (4.95 km, EPSG:3413) for Greenland — about 616k ice grid points (541k + 75k). Each grid point takes its nearest *attempted* radar trace within 1 km: a picked trace contributes an observed RSSNR (and its noise-floor margin), an unpicked one marks the grid point as a non-detection and contributes its detectability ceiling.
+
+Radar observations are strongly correlated along flight lines. We use spatial blocking (Roberts et al., 2016) to mitigate the effects of spatial correlation. The input data is divided into 500 km square cells in each sheet's projected coordinates. Eight hand-picked cells are held out entirely as a test set and the remaining cells are assigned randomly to five cross-validation folds. Test cell assignments are shown below.
+
+![Antarctic blocking cells](figures/cells_antarctic.png)
+*Antarctic 500 km blocking cells with per-cell observation counts; red outlines are held-out test cells.*
+
+![Greenland blocking cells](figures/cells_greenland.png)
+*Same for Greenland — coverage is much denser, so nearly every cell participates.*
+
+To reproduce these figures:
+```
+# TODO
+```

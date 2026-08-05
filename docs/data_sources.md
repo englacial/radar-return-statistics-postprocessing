@@ -11,7 +11,7 @@ All continuous fields are sampled bilinearly; categorical fields nearest. Output
 
 The per-trace rows come from a **pinned snapshot** of the upstream
 `radar_return_statistics` icechunk stores
-(`s3://opr-radar-metrics/icechunk/{ase,greenland,utig}`, read anonymously). These
+(`s3://opr-radar-metrics/icechunk/{greenland,antarctica}`, read anonymously). These
 supply `latitude`, `longitude`, `bed_elevation`, `surface_elevation`, powers,
 `qc_pass`, `frame_id`, and the derived `collection` (OPR season). The external
 products below are joined onto these points.

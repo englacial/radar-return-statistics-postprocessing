@@ -27,8 +27,11 @@ _REGION = {
 }
 _BASE = "https://its-live-data.s3.amazonaws.com/velocity_mosaic/v2/static/cog"
 
-# source band -> output column
-_BANDS = {"v": "itslive_v_m_yr", "v_error": "itslive_v_error_m_yr"}
+# source band -> output column. Generic names (not `itslive_*`): the velocity
+# covariate is sourced per ice sheet — ITS_LIVE for Greenland, MEaSUREs
+# phase-based (NSIDC-0754) for Antarctica, where ITS_LIVE has a polar hole — and
+# the model needs one column. The manifest records which product produced it.
+_BANDS = {"v": "surface_v_m_yr", "v_error": "surface_v_error_m_yr"}
 
 
 @register

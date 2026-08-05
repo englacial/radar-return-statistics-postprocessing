@@ -23,7 +23,7 @@ import matplotlib.pyplot as plt  # noqa: E402
 from plot_style import INK, style_axis  # noqa: E402
 
 MODEL = "atten_refl"
-COV_UNITS = {"era5_t2m_mean_K": "K", "itslive_v_m_yr": "m/yr", "ghf_mW_m2": "mW/m²"}
+COV_UNITS = {"era5_t2m_mean_K": "K", "surface_v_m_yr": "m/yr", "ghf_mW_m2": "mW/m²"}
 
 
 def main():
@@ -36,7 +36,7 @@ def main():
         else idata.posterior
     post = post.stack(sample=("chain", "draw"))
 
-    SHORT = {"era5_t2m_mean_K": "T_air", "itslive_v_m_yr": "speed",
+    SHORT = {"era5_t2m_mean_K": "T_air", "surface_v_m_yr": "speed",
              "ghf_mW_m2": "GHF", "is_greenland": "greenland"}
 
     def per_unit(c):

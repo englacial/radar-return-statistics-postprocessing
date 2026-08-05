@@ -15,7 +15,7 @@ Per-trace radar metrics come from the Open Polar Radar archive via two [icechunk
 Each trace carries the RSSNR target plus noise-floor diagnostics. The augment stage joins four gridded covariates at every trace location:
 * **BedMachine** thickness (v4 Antarctica / v6 Greenland)
 * **ERA5** 1990–2019 mean 2 m air temperature
-* **ITS_LIVE** surface speed
+* **surface speed** — MEaSUREs phase-based (NSIDC-0754) for Antarctica, ITS_LIVE v2 for Greenland
 * **geothermal heat flux** (Lösing & Ebbing 2021 / Colgan et al. 2022)
 
 For details and citations of these datasets, see [Data Sources](data_sources.md).

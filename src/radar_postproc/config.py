@@ -151,7 +151,7 @@ def load_model_config(config_path: str | Path) -> dict:
     # Supported: is_greenland (ice sheet), is_utig (producing institution).
     train.setdefault("indicators", ["is_greenland"])
     train.setdefault("features",
-                     ["bedmachine_thickness_m", "era5_t2m_mean_K", "itslive_v_m_yr", "ghf_mW_m2"])
+                     ["bedmachine_thickness_m", "era5_t2m_mean_K", "surface_v_m_yr", "ghf_mW_m2"])
     train.setdefault("models", [{"name": "linear"}])
     train["models"] = [{"name": m} if isinstance(m, str) else m for m in train["models"]]
 

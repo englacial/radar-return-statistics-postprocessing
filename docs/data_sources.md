@@ -61,20 +61,76 @@ In both cases, error is clipped at 1000 m.
 
 ---
 
-## ITS_LIVE — surface speed
+## Surface speed — `surface_v_m_yr`
+
+The speed covariate comes from a **different product per ice sheet**, both written to
+the same pair of columns (`surface_v_m_yr`, `surface_v_error_m_yr`); the manifest's
+per-dataset `source_info` records which product produced a given sheet's values.
+
+| Ice sheet | Product | Resolution | Epoch | Grid coverage |
+|---|---|---|---|---|
+| Antarctica | MEaSUREs Phase-Based Antarctica Ice Velocity Map v1 (NSIDC-0754) | 450 m | 1996–2018 composite | 99.5% |
+| Greenland | ITS_LIVE v2 static mosaic (RGI05A) | 120 m | 2014–2022 climatology | 97.3% |
+
+**Why not ITS_LIVE for Antarctica.** The ITS_LIVE v2 Antarctic mosaic has a polar
+hole: on the 5 km model grid it covers 0.0% of cells poleward of 85°S and ~11% /
+~55% in the 84–85°S / 82.5–84°S bands. Sampled the way the pipeline does
+(bilinear), that blanks 66,082 of 541,277 Antarctic grid cells (12.2%) —
+including 3,830 of the 13,796 grid cells that carry a radar observation (28% of the
+Antarctic training data). The MEaSUREs annual maps (NSIDC-0720) and the MEaSUREs
+Greenland annual mosaics (NSIDC-0725) do **not** fix this — 0720 has a larger,
+year-varying hole (0% poleward of 87°S in every year checked) and 0725 has exactly
+the same far-north Greenland gap as ITS_LIVE. NSIDC-0754 does: 99.5% of the grid,
+95.8% even in the 89–90°S band. Where both are valid the two products agree closely
+(Pearson r = 0.961 on log₁₀ speed, median ratio −1.0%, MAD 1.15 m/yr), so the swap
+mostly *adds* interior points rather than moving existing ones.
+
+**Caveat.** Using two products across the two sheets means any systematic
+inter-product bias in speed is partly confounded with the model's `is_greenland`
+indicator, since speed and that indicator both enter the attenuation and
+reflectivity terms. Greenland keeps ITS_LIVE because NSIDC-0725 offers it nothing.
+
+### Antarctica — MEaSUREs phase-based (NSIDC-0754)
+
+**Citations**
+- Mouginot, J., Rignot, E. & Scheuchl, B. (2019), *Continent-wide, interferometric
+  SAR phase, mapping of Antarctic ice velocity*, GRL 46, 9710–9718.
+  doi:10.1029/2019GL083826. Dataset: *MEaSUREs Phase-Based Antarctica Ice Velocity
+  Map, Version 1* (NSIDC-0754), doi:10.5067/PZ3NJ5RXRH10.
+
+**Data files** — One ~7 GB netCDF from NSIDC via `earthaccess`
+(`antarctic_ice_vel_phase_map_v01.nc`), EPSG:3031, 450 m.
+
+| File variable | Output column | Units | Sampling |
+|---|---|---|---|
+| `hypot(VX, VY)` | `surface_v_m_yr` | m/yr | bilinear (per component) |
+| `hypot(VX·ERRX, VY·ERRY) / v` | `surface_v_error_m_yr` | m/yr | bilinear (per component) |
+
+The speed error propagates `ERRX`/`ERRY` through the magnitude; where the speed is
+zero the direction is undefined and `hypot(ERRX, ERRY)` is used instead.
+
+**Uncertainty** — Phase-based interferometry is far more precise than feature
+tracking, and it shows: over the Antarctic grid the derived speed error has a median
+below 1 m/yr and a 99th percentile of ~5 m/yr, against ~58 m/yr for the ITS_LIVE
+`v_error` field over Greenland. The two `surface_v_error_m_yr` columns are therefore
+**not** on a comparable footing across sheets. Nothing in the model uses this column —
+it is carried for provenance only. See
+`uv run python scripts/error_histograms.py` → `outputs/error_histograms/surface_v_error.png`.
+
+### Greenland — ITS_LIVE
 
 **Citations**
 - ITS_LIVE project (NASA MEaSUREs); see https://its-live.jpl.nasa.gov/#how-to-cite
 
 **Data files** — AWS Open Data, from the velocity mosaics:
-`https://its-live-data.s3.amazonaws.com/velocity_mosaic/v2/static/cog/ITS_LIVE_velocity_120m_{RGI19A|RGI05A}_0000_v02_v.tif`
-(RGI19A = Antarctica, EPSG:3031; RGI05A = Greenland, EPSG:3413; 120 m).
+`https://its-live-data.s3.amazonaws.com/velocity_mosaic/v2/static/cog/ITS_LIVE_velocity_120m_RGI05A_0000_v02_v.tif`
+(RGI05A = Greenland, EPSG:3413; 120 m).
 The mosaic is a **2014–2022 climatology** (time-intercept 2018-01-01).
 
 | File variable | Output column | Units | Sampling |
 |---|---|---|---|
-| `v` (`…_v.tif`, speed band) | `itslive_v_m_yr` | m/yr | bilinear |
-| `v_error` (`…_v_error.tif`, speed error) | `itslive_v_error_m_yr` | m/yr | bilinear |
+| `v` (`…_v.tif`, speed band) | `surface_v_m_yr` | m/yr | bilinear |
+| `v_error` (`…_v_error.tif`, speed error) | `surface_v_error_m_yr` | m/yr | bilinear |
 
 **Uncertainty** — The ITS_LIVE [documentation](http://its-live-data.jpl.nasa.gov.s3.amazonaws.com/documentation/ITS_LIVE-Regional-Glacier-and-Ice-Sheet-Surface-Velocities.pdf) describes the `v_error` field:
 

@@ -35,4 +35,4 @@ def list_datasets() -> list[str]:
 
 def _load_all():
     """Import plugin modules so their @register decorators run."""
-    from . import bedmachine, era5, ghf, itslive  # noqa: F401
+    from . import bedmachine, era5, ghf, itslive, measures_vel  # noqa: F401

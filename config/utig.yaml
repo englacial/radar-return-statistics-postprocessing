@@ -19,7 +19,7 @@ datasets:
     region: antarctic
     version: "4"
     variables: [bed, surface, thickness, mask, errbed]
-  - name: itslive
+  - name: measures_vel  # MEaSUREs phase-based (NSIDC-0754); ITS_LIVE has a polar hole
     region: antarctic
   - name: era5  # mean t2m from the WeatherBench2 1990-2019 climatology (period fixed by product)
   - name: ghf  # Lösing & Ebbing (2021) geothermal heat flow + lower/upper bounds (regridded, non-topo)

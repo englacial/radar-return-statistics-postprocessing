@@ -34,7 +34,8 @@ uv run snakemake --cores 4 --config store=greenland
 ```
 
 Output: `outputs/{store}/{store}.parquet` — per-trace radar metrics joined with
-BedMachine, ITS_LIVE, ERA5, and geothermal heat flow, with a provenance
+BedMachine, surface speed (MEaSUREs NSIDC-0754 for Antarctica / ITS_LIVE for
+Greenland), ERA5, and geothermal heat flow, with a provenance
 manifest embedded in the file metadata. To move a config to a newer snapshot:
 `uv run radar-postproc resolve-snapshot config/<store>.yaml`.
 

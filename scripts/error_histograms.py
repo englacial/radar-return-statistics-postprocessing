@@ -1,7 +1,7 @@
 """Histograms of each input dataset's error field, for both ice sheets.
 
 Reads the error fields directly from the source grids (full grid for the cached
-NetCDFs; a decimated overview read for the remote ITS_LIVE COGs) and writes one
+NetCDFs; a decimated overview read for the remote ITS_LIVE COG) and writes one
 PNG per dataset to outputs/error_histograms/.
 
   uv run python scripts/error_histograms.py
@@ -101,29 +101,49 @@ def bedmachine_errbed():
         _save(fig, f"bedmachine_errbed_{slug}.png")
 
 
-def itslive_v_error():
-    regions = {"Antarctica (RGI19A)": "RGI19A", "Greenland (RGI05A)": "RGI05A"}
+def surface_v_error():
+    """Speed-error field per sheet — the two products behind `surface_v_error_m_yr`.
+
+    Antarctica: MEaSUREs phase-based (NSIDC-0754), ERRX/ERRY propagated through the
+    speed magnitude exactly as datasets/measures_vel.py does. Greenland: the ITS_LIVE
+    v2 `v_error` COG, read decimated over the network.
+    """
     fig, axes = plt.subplots(1, 2, figsize=(13, 5))
+
+    log.info("MEaSUREs NSIDC-0754: reading (decimated) Antarctica")
+    ds = xr.open_dataset(CACHE / "antarctic_ice_vel_phase_map_v01.nc")
+    sl = slice(None, None, max(1, ds.sizes["x"] // 2000))
+    vx, vy = ds["VX"][sl, sl].values, ds["VY"][sl, sl].values
+    ex, ey = ds["ERRX"][sl, sl].values, ds["ERRY"][sl, sl].values
+    ds.close()
+    speed = np.hypot(vx, vy)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        err = np.hypot(vx * ex, vy * ey) / speed
+    err = np.where(speed > 0, err, np.hypot(ex, ey))
+    panels = [(axes[0], "MEaSUREs NSIDC-0754 — Antarctica", _finite(err))]
+
     env = rasterio.Env(GDAL_DISABLE_READDIR_ON_OPEN="EMPTY_DIR",
                        CPL_VSIL_CURL_ALLOWED_EXTENSIONS=".tif")
-    for ax, (label, rgi) in zip(axes, regions.items()):
-        url = f"{_ITS}/ITS_LIVE_velocity_120m_{rgi}_0000_v02_v_error.tif"
-        log.info("ITS_LIVE v_error: reading (decimated) %s", label)
-        with env, rasterio.open(url) as ds:
-            factor = max(1, max(ds.width, ds.height) // 2000)
-            arr = ds.read(1, out_shape=(ds.height // factor, ds.width // factor),
-                          resampling=Resampling.nearest, masked=True)
-            v = _finite(arr.astype("float64").filled(np.nan))
+    url = f"{_ITS}/ITS_LIVE_velocity_120m_RGI05A_0000_v02_v_error.tif"
+    log.info("ITS_LIVE v_error: reading (decimated) Greenland")
+    with env, rasterio.open(url) as src:
+        factor = max(1, max(src.width, src.height) // 2000)
+        arr = src.read(1, out_shape=(src.height // factor, src.width // factor),
+                       resampling=Resampling.nearest, masked=True)
+    panels.append((axes[1], "ITS_LIVE v2 — Greenland",
+                   _finite(arr.astype("float64").filled(np.nan))))
+
+    for ax, label, v in panels:
         hi = np.percentile(v, 99.5)
         ax.hist(v[v <= hi], bins=120, color="#36b", edgecolor="none")
         ax.set_yscale("log")
-        ax.set_title(f"ITS_LIVE v_error — {label}\n(x clipped at 99.5th pct; decimated grid)")
+        ax.set_title(f"{label}\n(x clipped at 99.5th pct; decimated grid)")
         ax.set_xlabel("speed error (m/yr)")
         ax.set_ylabel("grid cells (log)")
         ax.text(0.97, 0.95, _stats_label(v), transform=ax.transAxes, ha="right",
                 va="top", fontsize=9, family="monospace")
     fig.tight_layout()
-    _save(fig, "itslive_v_error.png")
+    _save(fig, "surface_v_error.png")
 
 
 def ghf_uncertainty():
@@ -157,4 +177,4 @@ def _save(fig, name):
 if __name__ == "__main__":
     bedmachine_errbed()
     ghf_uncertainty()
-    itslive_v_error()
+    surface_v_error()

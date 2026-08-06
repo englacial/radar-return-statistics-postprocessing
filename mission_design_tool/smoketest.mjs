@@ -8,15 +8,25 @@
 // browser — it catches missing elements, bad ordering, and exceptions, not
 // layout or paint.
 
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { DEFAULT_PRESET, PRESETS as PRESET_LIST, getPreset } from './presets.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
+
 // Which build to exercise: the module page by default, or the bundled artifact.
-const target = process.argv[2] || 'index.html';
+// Accept the path either relative to the working directory or to this script,
+// so it works both from the repo root and from inside mission_design_tool/.
+const target = (() => {
+  const arg = process.argv[2] || 'index.html';
+  for (const candidate of [arg, join(here, arg)]) {
+    if (existsSync(candidate)) return candidate;
+  }
+  console.error(`no such file: ${arg} (tried ./${arg} and ${join(here, arg)})`);
+  process.exit(1);
+})();
 
 // ── parse index.html with Python's stdlib parser (no npm dependency) ────────
 const PY = `
@@ -44,7 +54,7 @@ p = P(); p.feed(sys.stdin.read())
 json.dump(p.root, sys.stdout)
 `;
 const tree = JSON.parse(execFileSync('python3', ['-c', PY], {
-  input: readFileSync(join(here, target), 'utf8'), maxBuffer: 256e6,
+  input: readFileSync(target, 'utf8'), maxBuffer: 256e6,
 }));
 
 // ── elements ───────────────────────────────────────────────────────────────

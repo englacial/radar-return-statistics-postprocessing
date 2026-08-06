@@ -1,0 +1,333 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ice Sounder Mission Design Tool</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header>
+  <h1>Radar Sounder Link Budget Design Tool</h1>
+  <div class="attribution">
+    <a href="https://github.com/englacial/radar-return-statistics" target="_blank" rel="noreferrer">RSSNR data</a> built from
+    <a href="https://openpolarradar.org/" target="_blank" rel="noreferrer">Open Polar Radar</a> data<br>
+    Processing and visualization code on
+    <a href="https://github.com/englacial/radar-return-statistics-postprocessing" target="_blank"
+       rel="noreferrer" class="nowrap"><svg class="gh" viewBox="0 0 16 16" width="12" height="12"
+       fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg> GitHub</a><br>
+    Built by
+    <a href="https://englacial.org" target="_blank" rel="noreferrer" class="nowrap"><img
+       src="logos/icon_englacial.png" alt=""> Englacial</a>
+    with support from
+    <a href="https://astera.org" target="_blank" rel="noreferrer" class="nowrap"><img
+       src="logos/icon_astera.png" alt=""> Astera</a>
+  </div>
+</header>
+
+<main>
+
+<!-- ───────────────────────── 1. what this is ───────────────────────── -->
+<section class="intro" id="sec-intro">
+  <p class="lede">
+    This tool is designed to built intuition about nadir-pointing ice-penetrating radar 
+    sounder instruments on novel platforms. Start from a preset below or enter custom
+    system parameters to estimate the expected signal-to-noise ratio (SNR) for a radar 
+    sounder imaging the basal interface (bedrock topography or other sub-ice interface)
+    across the Antarctic and Greenland ice sheets.
+  </p>
+
+  <p>
+    The most difficult part of building an radar sounder link budget is estimating what
+    happens within the ice. Both attenuation within ice and reflectivity at the ice-bed 
+    interface can vary dramatically. This tool uses a 
+    <a href="https://github.com/englacial/radar-return-statistics-postprocessing/blob/main/docs/3_model.md" target="_blank">statistical model</a>
+    of <a href="https://github.com/englacial/radar-return-statistics-postprocessing/blob/main/docs/1_rssnr_background.md" target="_blank">Required Surface SNR (RSSNR)</a>
+    to estimate the signal-to-noise ratio of a radar sounder across a wide range of possible
+    instrument and platform configurations.
+  </p>
+
+  <p>
+    In short, RSSNR provides the expected difference between surface power return and
+    basal power return, after correcting for geoemetric spreading. Once we have RSSNR,
+    we can calculate the expected bed SNR using only properties of the instrument and
+    the platform its on (aircraft, UAV, satellite, etc). That's what this tool does.
+  </p>
+
+  <pre class="eq">SNR<sub>bed</sub>  =  SNR<sub>surface</sub>  +  G<sub>pulse-comp</sub>  +  Δspreading(<i>d</i>)  −  RSSNR</pre>
+
+  <p>
+    We treat the surface SNR as fixed (a loose approximation) and only the last two terms
+    vary spatially, though ice thickness (derived from BedMachine) and the fitted RSSNR.
+  </p>
+
+  <p>
+    Note that these values carry a lot of uncertainty. This is intended as a general
+    tool to build intuition about what systems perform best for what general use cases.
+    Take care and verify local conditions before relying on it for specific predictions.
+  </p>
+
+  <details class="assumptions">
+    <summary>Detailed assumptions</summary>
+    <ul>
+      <li><b>Coherent Fresnel-zone summation.</b> A 1/R² radar equation, assuming returns
+        add coherently over the first Fresnel zone.</li>
+      <li><b>Azimuth gain is evaluated at the surface</b> Fresnel zone, which is mildly
+        conservative (especially at low altitudes).</li>
+      <li><b>RSSNR includes no estimate of frequency-dependence</b> which may bias
+        results when the center frequency is far from the frequency of airborne radar 
+        sounders represented in OPR. </li>
+      <li><b>Pulse-compression gain cancels inside RSSNR</b> — it applies to the surface and
+        bed returns alike — so it is added back once here, for the bed.</li>
+      <li><b>The noise floor is sky-dominated at VHF.</b> Antenna temperature defaults to the
+        galactic background (ITU-R P.372), ≈3700 K at 60 MHz, assuming a low-gain antenna that
+        sees mostly sky. A directive antenna looking down at the ice would see less.</li>
+      <li><b>Clutter is not modelled.</b> Where the ice is thin enough that the bed echo
+        returns before the pulse ends, the tool charges the bed for the compressed surface
+        return's sidelobe pedestal — but surface roughness scatter arrives over the same
+        delays and is often larger. The overlap penalty is a lower bound on the
+        interference, not the whole of it.</li>
+      <li><b>The model has real uncertainty</b> (<span id="model-rmse"></span> cross-validated
+        RMSE). The 20th-percentile layer and the posterior-predictive distributions both
+        carry it; the median layer does not.</li>
+    </ul>
+  </details>
+</section>
+
+<!-- ───────────────────────── 2. presets ───────────────────────── -->
+<section id="sec-presets">
+  <h2><span class="step">1</span> Start from a preset</h2>
+  <div class="presets" id="presets"></div>
+</section>
+
+<!-- ───────────────────────── 3. parameters ───────────────────────── -->
+<section id="sec-params">
+  <h2><span class="step">2</span> Adjust the parameters
+    <span class="hint">fields marked <i>auto</i> are derived from the ones above them; type in one to override it</span>
+  </h2>
+
+  <div id="panel">
+
+    <details data-summary="platform">
+      <summary>Platform <span class="sum"></span></summary>
+      <div class="fields">
+        <label>Altitude above surface <span class="u">m</span>
+          <input type="number" id="altitude_m" value="12500" step="100"></label>
+        <label>Ground velocity <span class="u">m/s</span>
+          <input type="number" id="velocity_ms" value="22" step="1"></label>
+      </div>
+    </details>
+
+    <details data-summary="power">
+      <summary>Power budget <span class="sum"></span></summary>
+      <div class="fields">
+        <label>Power available to payload <span class="u">W</span>
+          <input type="number" id="payload_power_W" value="45" step="5"></label>
+        <label>Power amplifier efficiency <span class="u">–</span>
+          <input type="number" id="pa_efficiency" value="0.5" step="0.05" min="0.01" max="1"></label>
+        <label class="derived">Peak transmit power <span class="u">W</span>
+          <input type="number" id="tx_power_W" data-derived step="10"></label>
+      </div>
+    </details>
+
+    <details data-summary="timing">
+      <summary>Pulse timing <span class="sum"></span></summary>
+      <div class="fields">
+        <label>Max ice thickness for PRI <span class="u">m</span>
+          <input type="number" id="max_ice_thickness_m" value="5000" step="500"></label>
+        <label class="derived">Pulse length <span class="u">µs</span>
+          <input type="number" id="pulse_length_s" data-derived data-unit="1e-6" step="1"></label>
+        <label class="derived">Pulse repetition interval <span class="u">µs</span>
+          <input type="number" id="pri_s" data-derived data-unit="1e-6" step="10"></label>
+      </div>
+    </details>
+
+    <details data-summary="rf">
+      <summary>RF <span class="sum"></span></summary>
+      <div class="fields">
+        <label>Center frequency <span class="u">MHz</span>
+          <input type="number" id="frequency_Hz" value="60" data-unit="1e6" step="5"></label>
+        <label>Bandwidth <span class="u">MHz</span>
+          <input type="number" id="bandwidth_Hz" value="10" data-unit="1e6" step="1"></label>
+        <label>Transmit antenna gain <span class="u">dBi</span>
+          <input type="number" id="gain_tx_dBi" value="3" step="1"></label>
+        <label>Receive antenna gain <span class="u">dBi</span>
+          <input type="number" id="gain_rx_dBi" value="3" step="1"></label>
+        <label>System losses <span class="u">dB</span>
+          <input type="number" id="system_loss_dB" value="3" step="1"></label>
+        <label>Receiver noise figure <span class="u">dB</span>
+          <input type="number" id="noise_figure_dB" value="5" step="0.5"></label>
+        <label class="derived">Antenna noise temperature <span class="u">K</span>
+          <input type="number" id="noise_temp_K" data-derived step="50"></label>
+        <label>Surface reflectivity <span class="u">dB</span>
+          <input type="number" id="surface_reflectivity_dB" value="-15" step="1"></label>
+      </div>
+    </details>
+
+    <details data-summary="processing">
+      <summary>Processing <span class="sum"></span></summary>
+      <div class="fields">
+        <label class="derived">Azimuth integration distance <span class="u">m</span>
+          <input type="number" id="azimuth_distance_m" data-derived step="10" min="0"></label>
+        <label class="wide">Surface / bed overlap
+          <select id="overlap_mode">
+            <option value="sidelobe">Estimate surface sidelobes</option>
+            <option value="adaptive">Shorten pulse to avoid overlap</option>
+          </select></label>
+        <label class="wide">Receive weighting
+          <select id="sidelobe_window">
+            <option value="rect">Rectangular (no weighting)</option>
+            <option value="hann">Hann (−1.76 dB SNR)</option>
+          </select></label>
+        <label>Relative permittivity of ice <span class="u">–</span>
+          <input type="number" id="epsilon_r" value="3.17" step="0.01"></label>
+      </div>
+    </details>
+
+  </div>
+
+</section>
+
+<!-- Margin rail: beside the content on wide screens, in the column otherwise. -->
+<div class="rail" id="rail">
+  <aside class="sidenote info" id="rssnr-box" data-anchor="sec-intro">
+    <h4>What is RSSNR?</h4>
+    <p>
+      Required Surface SNR (RSSNR) is an engineering metric used to empirically estimate
+      link budgets. It was originally introduced by Schroeder et al., 2021. The values
+      used here are interpolated using a Bayesian regression. Read more about RSSNR
+      <a href="https://github.com/englacial/radar-return-statistics-postprocessing/blob/main/docs/1_rssnr_background.md" target="_blank">in our docs</a>.
+    </p>
+  </aside>
+
+  <aside class="sidenote info" id="info-box" data-anchor="sec-intro"></aside>
+  <aside class="sidenote warn is-empty" id="warnings" data-anchor="sec-params"></aside>
+  <aside class="sidenote view" id="view-box" data-anchor="map-card">
+    <h4>Map</h4>
+    <div class="fields">
+      <label>Quantity
+        <select id="quantity">
+          <option value="snr">Median</option>
+          <option value="p20">20th percentile</option>
+        </select></label>
+    </div>
+  </aside>
+  
+  <aside class="sidenote info" id="clutter-box" data-anchor="map-card">
+    <h4>Don't forget about clutter</h4>
+    <p>
+      This tool <strong>does not</strong> model off-nadir clutter or any kind of englacial
+      reflections. For high-altitude systems, clutter from the surface, firn layers, or
+      even other parts of the basal interface may become the limiting factors for
+      basal interface detection.
+    </p>
+  </aside>
+
+  <aside class="sidenote view" id="dist-box" data-anchor="dist-card">
+    <h4>Distributions</h4>
+    <div class="fields">
+      <label>Target basal SNR <span class="u">dB</span>
+        <input type="number" id="target_snr_dB" value="10" step="1"></label>
+      <label class="check"><input type="checkbox" id="posterior_predictive" checked>
+        Posterior predictive spread</label>
+      <label class="check"><input type="checkbox" id="split_floating">
+        Split Antarctica by floating / grounded</label>
+    </div>
+  </aside>
+
+  <aside class="sidenote info" id="feedback-box" data-anchor="dist-card">
+    <h4>Give us feedback!</h4>
+    <p>
+      This tool is a work-in-progress and we always welcome your feedback. See something
+      that looks off? Think we're misrepresenting your favorite radar sounder platform?
+      Tell us! You can
+      <a href="https://github.com/englacial/radar-return-statistics-postprocessing/issues/new", target="_blank">open an issue</a>,
+      or send me an email if you prefer.
+    </p>
+  </aside>
+</div>
+
+<!-- ───────────────────────── 4. results ───────────────────────── -->
+<section id="results">
+  <h2><span class="step">3</span> Results</h2>
+
+  <div class="card">
+    <h3>Link budget</h3>
+    <div id="budget" class="readout"></div>
+  </div>
+
+  <div class="card" id="map-card">
+    <div class="card-head">
+      <h3 id="map-title">Expected basal SNR</h3>
+      <div class="card-actions">
+        <span id="hover" class="hover"></span>
+        <button class="btn sm" id="export-png">Download PNG</button>
+      </div>
+    </div>
+    <div class="maps">
+      <figure><canvas id="map-antarctic"></canvas>
+        <figcaption>Antarctica</figcaption></figure>
+      <figure><canvas id="map-greenland"></canvas>
+        <figcaption>Greenland</figcaption></figure>
+    </div>
+    <div class="cbar"><canvas id="cbar" height="14"></canvas>
+      <div class="cbar-ticks" id="cbar-ticks"></div></div>
+    <p class="maps-key">Outlines from the BedMachine mask: dark grey = coastline,
+      light grey = grounding line. Grey fill marks ice below the colour scale.</p>
+  </div>
+
+  <div class="card" id="dist-card">
+    <div class="card-head">
+      <h3>Distributions</h3>
+    </div>
+    <div class="charts">
+      <figure><canvas id="hist"></canvas>
+        <figcaption>Histogram of basal SNR (area-normalised)</figcaption></figure>
+      <figure><canvas id="cdf"></canvas>
+        <figcaption>Fraction of ice-sheet area above a given basal SNR</figcaption></figure>
+    </div>
+    <div id="legend" class="legend"></div>
+  </div>
+
+  <div class="card">
+    <h3>Coverage</h3>
+    <div id="coverage" class="coverage"></div>
+  </div>
+</section>
+
+<footer>
+  <p>Data citation — the radar metrics behind the RSSNR model are derived from the
+    <a href="https://openpolarradar.org/" target="_blank" rel="noreferrer">Open Polar Radar</a>
+    catalog, read with <a href="https://docs.englacial.org/xopr/" target="_blank" rel="noreferrer">xOPR</a>
+    and reduced by
+    <a href="https://github.com/englacial/radar-return-statistics" target="_blank" rel="noreferrer">englacial/radar-return-statistics</a>.
+    Please cite Open Polar Radar and the underlying campaign data providers when using these results.</p>
+
+  <p>The model, the covariate grid and this viewer are produced by
+    <a href="https://github.com/englacial/radar-return-statistics-postprocessing" target="_blank" rel="noreferrer">englacial/radar-return-statistics-postprocessing</a>.
+    Every external dataset joined onto the grid — BedMachine, MEaSUREs and ITS_LIVE surface velocity,
+    ERA5, and geothermal heat flow — carries its own citation requirements, listed at
+    <a href="https://github.com/englacial/radar-return-statistics-postprocessing/blob/main/docs/data_sources.md"
+       target="_blank" rel="noreferrer">docs/data_sources.md</a>.</p>
+
+  <p>The required-surface-SNR approach was introduced by
+    Schroeder, D.M., Bienert, N.L., Culberg, R., MacKie, E.J., Teisberg, T.O., Chu, W., Young, D.A. (2021):
+    Glaciological Constraints on Link Budgets for Orbital Radar Sounding of Earth's Ice Sheets, in:
+    2021 IEEE International Geoscience and Remote Sensing Symposium IGARSS, IEEE, Brussels, Belgium,
+    pp. 647–650, <a href="https://doi.org/10.1109/IGARSS47720.2021.9553237" target="_blank"
+    rel="noreferrer">doi.org/10.1109/IGARSS47720.2021.9553237</a>. This tool extends that method to
+    both ice sheets with a larger dataset and a Bayesian model; see
+    <a href="https://github.com/englacial/radar-return-statistics-postprocessing/blob/main/docs/1_rssnr_background.md"
+       target="_blank" rel="noreferrer">docs/1_rssnr_background.md</a>.</p>
+
+  <p>For design exploration only. Model predictions carry substantial uncertainty
+    (<span id="footer-rmse"></span> cross-validated RMSE) and the link budget makes assumptions that
+    may not hold for any particular system. Verify against the original data before relying on a number.</p>
+</footer>
+
+</main>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>

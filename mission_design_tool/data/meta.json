@@ -1,0 +1,73 @@
+{
+  "model": "atten_refl",
+  "run_id": "7699bd93f752",
+  "created_at": "2026-08-06T23:30:24.301731+00:00",
+  "stride": 1,
+  "resolution_m": 5000,
+  "mu_scale": 10.0,
+  "sd_scale": 4.0,
+  "detection": {
+    "theta_dB": -1.3476283834362817,
+    "tau_dB": 2.99236628256035
+  },
+  "cv_rmse_dB": 14.109161016934232,
+  "features": [
+    "bedmachine_thickness_m",
+    "era5_t2m_mean_K",
+    "surface_v_m_yr",
+    "ghf_mW_m2"
+  ],
+  "sources": [
+    "BedMachine Antarctica v4",
+    "MEaSUREs phase-based ice velocity",
+    "ERA5 2 m air temperature (1990-2019)",
+    "Geothermal heat flow, Antarctica",
+    "BedMachine Greenland v6",
+    "ITS_LIVE ice velocity v02",
+    "Geothermal heat flow, Greenland"
+  ],
+  "sheets": {
+    "antarctic": {
+      "shape": [
+        1334,
+        1334
+      ],
+      "x0": -3333000.0,
+      "y0": 3333000.0,
+      "dx": 5000.0,
+      "dy": -5000.0,
+      "crs": "EPSG:3031",
+      "n": 527845,
+      "bytes": 5278450,
+      "gz_bytes": 2288240
+    },
+    "greenland": {
+      "shape": [
+        556,
+        310
+      ],
+      "x0": -652925.0,
+      "y0": -632675.0,
+      "dx": 4950.0,
+      "dy": -4950.0,
+      "crs": "EPSG:3413",
+      "n": 68069,
+      "bytes": 680690,
+      "gz_bytes": 286635
+    }
+  },
+  "outlines": {
+    "bytes": 77478,
+    "gz_bytes": 23008,
+    "segments": {
+      "antarctic": {
+        "coast": 31,
+        "grounding": 130
+      },
+      "greenland": {
+        "coast": 43,
+        "grounding": 1
+      }
+    }
+  }
+}

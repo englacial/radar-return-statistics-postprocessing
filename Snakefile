@@ -28,6 +28,13 @@ MODEL_STORES = sorted({s for stores in _model_cfg.get(
 MODELS = [m["name"] if isinstance(m, dict) else m
           for m in _model_cfg.get("train", {}).get("models", [{"name": "linear"}])]
 
+# Which trained model the mission design tool ships. Lives in its own config
+# section so it never enters a stage's section hash (and so never perturbs a
+# run_id); override at the command line with --config mission_tool_model=linear.
+TOOL_DIR = "mission_design_tool"
+TOOL_MODEL = config.get("mission_tool_model",
+                        _model_cfg.get("mission_tool", {}).get("model", MODELS[-1]))
+
 
 rule all:
     input:
@@ -82,6 +89,7 @@ rule model_all:
     input:
         expand(f"{OUT_DIR}/model/{{model}}/metrics.json", model=MODELS),
         f"{OUT_DIR}/model/benchmark.csv",
+        f"{TOOL_DIR}/dist/mission_design_tool.html",
 
 
 rule grid:
@@ -136,3 +144,47 @@ rule benchmark:
         from radar_postproc.train import write_benchmark
 
         write_benchmark(list(input), output.csv, output.md)
+
+
+# --- Mission design tool ------------------------------------------------------
+# Keeps the web tool's payload in step with the model it ships: retraining
+# regenerates it, so the deployed page can never quietly serve a stale run_id.
+#   uv run snakemake --cores 4 mission_tool
+
+
+rule mission_tool:
+    input:
+        f"{TOOL_DIR}/dist/mission_design_tool.html",
+
+
+rule mission_tool_data:
+    # Packed prediction layers + BedMachine outlines for the browser.
+    input:
+        zarr=f"{OUT_DIR}/model/{TOOL_MODEL}/predictions.zarr",
+        manifest=f"{OUT_DIR}/model/{TOOL_MODEL}/manifest.json",
+        metrics=f"{OUT_DIR}/model/{TOOL_MODEL}/metrics.json",
+        grid=f"{OUT_DIR}/model/grid.parquet",
+        script=f"{TOOL_DIR}/build_data.py",
+    output:
+        meta=f"{TOOL_DIR}/data/meta.json",
+        antarctic=f"{TOOL_DIR}/data/antarctic.bin.gz",
+        greenland=f"{TOOL_DIR}/data/greenland.bin.gz",
+        outlines=f"{TOOL_DIR}/data/coast.json.gz",
+    params:
+        model=TOOL_MODEL,
+    shell:
+        "python {input.script} --model {params.model}"
+
+
+rule mission_tool_standalone:
+    # Single-file build with the data inlined, for use without a web server.
+    input:
+        data=rules.mission_tool_data.output,
+        sources=[f"{TOOL_DIR}/{f}" for f in
+                 ("index.html", "style.css", "icons.js", "presets.js", "sidelobes.js",
+                  "auto.js", "physics.js", "warnings.js", "app.js")],
+        script=f"{TOOL_DIR}/build_standalone.py",
+    output:
+        html=f"{TOOL_DIR}/dist/mission_design_tool.html",
+    shell:
+        "python {input.script}"

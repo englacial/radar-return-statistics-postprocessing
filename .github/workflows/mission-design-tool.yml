@@ -1,0 +1,88 @@
+# Deploys mission_design_tool/ to GitHub Pages.
+#
+# The tool is a static page with no build step: index.html, the ES modules, and
+# the packed model export in data/ are served as-is. So this workflow only
+# verifies the page and builds the single-file download that ships alongside it.
+#
+# data/ cannot be regenerated here — build_data.py reads outputs/model/, which
+# is gitignored and produced by the `model` workflow. It is committed instead,
+# and the job fails loudly if it is missing rather than deploying an empty map.
+#
+# Enable once in the repo settings: Settings -> Pages -> Source: GitHub Actions.
+
+name: mission-design-tool
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "mission_design_tool/**"
+      - ".github/workflows/mission-design-tool.yml"
+  pull_request:
+    paths:
+      - "mission_design_tool/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Let a running deploy finish rather than cancelling it half-published.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Check the model export is present
+        run: |
+          cd mission_design_tool
+          missing=0
+          for f in data/meta.json data/antarctic.bin.gz data/greenland.bin.gz; do
+            [ -f "$f" ] || { echo "::error::missing $f — run build_data.py and commit data/"; missing=1; }
+          done
+          [ "$missing" = 0 ] || exit 1
+          python3 -c "import json;m=json.load(open('data/meta.json'));\
+            print(f\"model {m['model']}, run {m['run_id']}, {m['resolution_m']/1000:.0f} km grid\")"
+
+      # Link budget against the reference notebooks, plus the packed data's
+      # own integrity (cell counts, index range, mask values).
+      - name: Physics and data self-test
+        run: node mission_design_tool/selftest.mjs
+
+      # Loads the page against a stub DOM and drives it: presets, invalid
+      # input, both overlap branches, exports, hover.
+      - name: Page smoke test
+        run: node mission_design_tool/smoketest.mjs
+
+      - name: Build the single-file download
+        run: python3 mission_design_tool/build_standalone.py
+
+      - name: Smoke test the bundle
+        run: node mission_design_tool/smoketest.mjs mission_design_tool/dist/mission_design_tool.html
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: mission_design_tool
+
+  # Pull requests get the checks above but are not published.
+  deploy:
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

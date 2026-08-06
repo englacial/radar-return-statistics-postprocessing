@@ -66,3 +66,8 @@ train:
   models:
     - name: linear
     - name: atten_refl
+
+# Which trained model the mission design tool ships (mission_design_tool/).
+# Its own section, so it never enters a stage's section hash.
+mission_tool:
+  model: atten_refl

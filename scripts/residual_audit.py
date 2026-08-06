@@ -26,6 +26,7 @@ from radar_postproc.train import (  # noqa: E402
     _censored_mask,
     _design_matrix,
     _fit_and_eval,
+    add_indicator_columns,
     select_nondetects,
 )
 
@@ -43,9 +44,7 @@ def main():
     indicators = tuple(tcfg.get("indicators", ["is_greenland"]))
 
     df = pd.read_parquet("outputs/model/split.parquet")
-    df["is_greenland"] = (df["ice_sheet"] == "greenland").astype("float64")
-    if "institution" in df:
-        df["is_utig"] = (df["institution"] == "UTIG").astype("float64")
+    add_indicator_columns(df, list(indicators))  # whatever config asks for
     thick_ok = (~(df["bedmachine_thickness_m"] < tcfg["min_thickness_m"])
                 if tcfg["min_thickness_m"] is not None else pd.Series(True, index=df.index))
     usable = df[target].notna() & df[features].notna().all(axis=1) & thick_ok

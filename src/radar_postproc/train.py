@@ -39,6 +39,10 @@ INDICATOR_BUILDERS = {
     # property of the *measurement*, so maps are referenced to CReSIS.
     "is_greenland": lambda df: (df["ice_sheet"] == "greenland"),
     "is_utig": lambda df: (df.get("institution", pd.Series(index=df.index)) == "UTIG"),
+    # Floating ice: BedMachine mask 3, which means the same thing in the
+    # Antarctic and Greenland products. Mask 3 is the only floating value — no
+    # other mask value counts as floating.
+    "is_floating": lambda df: (df["bedmachine_mask"] == 3),
 }
 
 

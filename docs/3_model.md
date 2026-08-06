@@ -7,11 +7,13 @@ All inputs are converted to z-scores.
 ```
 RSSNR = atten_rate · thickness − refl                   (dB, normalized)
 
-atten_rate = α_a + β_a · [T_air, speed, GHF, greenland]
-refl       = α_r + β_r · [T_air, speed, GHF, greenland]
+atten_rate = α_a + β_a · [T_air, speed, GHF, greenland, floating]
+refl       = α_r + β_r · [T_air, speed, GHF, greenland, floating]
 
 observed RSSNR ~ Normal(RSSNR*, σ)
 ```
+
+`greenland` and `floating` are 0/1 indicators appended un-scaled. `floating` is determined from BedMachine mask value 3.
 
 Priors are Normal(0, 1) on every standardized coefficient and HalfNormal(1) on σ.
 
@@ -29,7 +31,7 @@ where `C` is the trace's measured detectability ceiling (surface power, geometry
 
 Note that a gap only counts as a non-detection if the radar window at the expected bed depth is statistically indistinguishable from noise (window peak − median, δ < 8 dB). This is intended to exclude cases where clutter, not the noise floor, limits detectability. The RSSNR model is not well-suited to determining clutter budgets, so we explicitly try to avoid estimating this case.
 
-In total, there are 13 learned parameters, all with physically interpretable meaning. (Though we discourage over-interpretation of the model results. This is an engineering tool, not a scientific data product to determine properties of the ice sheets.)
+In total, there are 15 learned parameters, all with physically interpretable meaning. (Though we discourage over-interpretation of the model results. This is an engineering tool, not a scientific data product to determine properties of the ice sheets.)
 
 ## Fitting
 
@@ -68,17 +70,17 @@ The headline accuracy and calibration numbers:
 
 | quantity | value |
 |---|---|
-| CV RMSE (5-fold, spatially blocked) | 14.96 dB (fold range 14.41–15.75) |
+| CV RMSE (5-fold, spatially blocked) | 14.11 dB (fold range 12.88–14.93) |
 | CV 1σ coverage | 0.68 |
-| Held-out test RMSE | 14.29 dB (n = 1,433 + 90 censored) |
-| Held-out test 1σ coverage | 0.71 |
-| Fully-linear baseline (same layers) | CV 15.57 dB / test 14.74 dB |
-| Sampler diagnostics | 0 divergences, R̂ ≤ 1.006 |
+| Held-out test RMSE | 13.84 dB (n = 1,433 + 90 censored) |
+| Held-out test 1σ coverage | 0.70 |
+| Fully-linear baseline (same layers) | CV 14.40 dB / test 14.23 dB |
+| Sampler diagnostics | 0 divergences, R̂ ≤ 1.009 |
 
-Posterior distributions of all 13 learned parameters, converted to physical units (the z-score normalization is an invertible affine transform, and the normalizer constants are stored in `posterior.nc`, so this conversion is exact). Attenuation-side parameters become two-way dB/km via σ_target/σ_thickness; reflectivity-side parameters become dB contributions to RSSNR (sign-flipped for the −refl convention); covariate effects are fully per-unit (e.g. dB/km/K, dB/km/(mW/m²)); θ, τ, and σ are natively in dB. Intercept-like values are referenced to the mean covariate conditions of the training set.
+Posterior distributions of all 15 learned parameters, converted to physical units (the z-score normalization is an invertible affine transform, and the normalizer constants are stored in `posterior.nc`, so this conversion is exact). Attenuation-side parameters become two-way dB/km via σ_target/σ_thickness; reflectivity-side parameters become dB contributions to RSSNR (sign-flipped for the −refl convention); covariate effects are fully per-unit (e.g. dB/km/K, dB/km/(mW/m²)); θ, τ, and σ are natively in dB. Intercept-like values are referenced to the mean covariate conditions of the training set.
 
 ![Posterior distributions in physical units](figures/posterior_physical.png)
-*Posteriors in physical units, with the headline CV and held-out test RMSE. The 16.5 dB/km one-way (32.9 two-way) depth-averaged attenuation rate at mean conditions falls in the physically expected range. Posterior widths are small because n ≈ 21k; the meaningful uncertainty is the 15 dB residual σ.*
+*Posteriors in physical units, with the headline CV and held-out test RMSE. The 14.4 dB/km one-way (28.9 two-way) depth-averaged attenuation rate at mean conditions falls in the physically expected range. Posterior widths are small because n ≈ 21k; the meaningful uncertainty is the 14 dB residual σ. The two 0/1 indicators are reported as the step between their states.*
 
 The distribution of observed and posterior predicted RSSNR values are shown below by ice sheet:
 

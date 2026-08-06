@@ -59,6 +59,10 @@ train:
       enabled: true           # exclude non-detections whose at-depth window shows energy
       max_dB: 8
   features: [bedmachine_thickness_m, era5_t2m_mean_K, surface_v_m_yr, ghf_mW_m2]
+  # Raw 0/1 columns appended un-scaled. is_floating = BedMachine mask 3 (the only
+  # floating value); floating ice sits on a specular ocean interface, which the
+  # thickness term alone does not capture.
+  indicators: [is_greenland, is_floating]
   models:
     - name: linear
     - name: atten_refl

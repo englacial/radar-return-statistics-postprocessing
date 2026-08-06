@@ -37,12 +37,16 @@ def main():
     post = post.stack(sample=("chain", "draw"))
 
     SHORT = {"era5_t2m_mean_K": "T_air", "surface_v_m_yr": "speed",
-             "ghf_mW_m2": "GHF", "is_greenland": "greenland"}
+             "ghf_mW_m2": "GHF", "is_greenland": "greenland",
+             "is_floating": "floating"}
+
+    INDICATOR_STEP = {"is_greenland": "\n(Greenland − Antarctica)",
+                      "is_floating": "\n(floating − grounded)"}
 
     def per_unit(c):
         """(divisor, unit-suffix) converting a per-1sd effect to per-original-unit."""
-        if c == "is_greenland":
-            return 1.0, ""  # 0/1 contrast: the effect IS the Greenland-vs-Antarctica step
+        if c in INDICATOR_STEP:
+            return 1.0, ""  # 0/1 contrast: the effect IS the step between the two states
         return norm[c]["std"], f"/{COV_UNITS[c]}"
 
     rate = sy / st * 1000.0  # z -> dB/km (two-way)
@@ -50,16 +54,14 @@ def main():
                post["alpha_atten"].values * rate, "dB/km (2-way)")]
     for c in post["covariate"].values:
         sx, suffix = per_unit(c)
-        panels.append((f"β_a[{SHORT[c]}] — Δ atten rate"
-                       + ("\n(Greenland − Antarctica)" if c == "is_greenland" else ""),
+        panels.append((f"β_a[{SHORT[c]}] — Δ atten rate" + INDICATOR_STEP.get(c, ""),
                        post["beta_atten"].sel(covariate=c).values * rate / sx,
                        f"dB/km{suffix}"))
     panels.append(("−α_r — reflectivity term\n@ mean conditions",
                    -post["alpha_refl"].values * sy, "dB"))
     for c in post["covariate"].values:
         sx, suffix = per_unit(c)
-        panels.append((f"−β_r[{SHORT[c]}] — Δ RSSNR via refl"
-                       + ("\n(Greenland − Antarctica)" if c == "is_greenland" else ""),
+        panels.append((f"−β_r[{SHORT[c]}] — Δ RSSNR via refl" + INDICATOR_STEP.get(c, ""),
                        -post["beta_refl"].sel(covariate=c).values * sy / sx,
                        f"dB{suffix}"))
     panels.append(("σ — residual scatter", post["sigma"].values * sy, "dB"))

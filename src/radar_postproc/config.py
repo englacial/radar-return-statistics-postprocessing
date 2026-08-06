@@ -147,9 +147,10 @@ def load_model_config(config_path: str | Path) -> dict:
     train["detection"].setdefault("delta_filter", {})
     train["detection"]["delta_filter"].setdefault("enabled", True)
     train["detection"]["delta_filter"].setdefault("max_dB", 8.0)
-    # Raw 0/1 columns appended to the design matrix (not z-scored).
-    # Supported: is_greenland (ice sheet), is_utig (producing institution).
-    train.setdefault("indicators", ["is_greenland"])
+    # Raw 0/1 columns appended to the design matrix (not z-scored). Supported:
+    # is_greenland (ice sheet), is_floating (BedMachine mask 3),
+    # is_utig (producing institution). See train.INDICATOR_BUILDERS.
+    train.setdefault("indicators", ["is_greenland", "is_floating"])
     train.setdefault("features",
                      ["bedmachine_thickness_m", "era5_t2m_mean_K", "surface_v_m_yr", "ghf_mW_m2"])
     train.setdefault("models", [{"name": "linear"}])

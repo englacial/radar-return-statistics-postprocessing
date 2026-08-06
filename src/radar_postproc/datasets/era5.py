@@ -39,16 +39,31 @@ _CLIMATOLOGY = {
 }
 
 
+def wrap_antimeridian(da: xr.DataArray) -> xr.DataArray:
+    """Append an x = +180 column copied from x = -180. Idempotent.
+
+    The ERA5 grid ends at +179.75, so `xr.interp` returns NaN for any point east
+    of that — a one-cell-wide NaN stripe along the antimeridian, which in
+    EPSG:3031 runs straight down from the pole through the Ross Ice Shelf. The
+    field is periodic in longitude, so closing it is exact, not an extrapolation.
+    """
+    if float(da["x"].max()) >= 180.0:
+        return da
+    wrap = da.isel(x=0).assign_coords(x=180.0)
+    return xr.concat([da, wrap], dim="x")
+
+
 def to_xy_field(da: xr.DataArray) -> xr.DataArray:
     """Normalize an ERA5 (longitude 0..360, descending latitude) field for sampling.
 
-    Converts longitude to -180..180, sorts both axes ascending, and renames the
-    dims to x/y so sampling.sample_raster (EPSG:4326) can interpolate at trace
-    lon/lat directly. Pure / network-free so it can be unit-tested.
+    Converts longitude to -180..180, sorts both axes ascending, renames the dims
+    to x/y so sampling.sample_raster (EPSG:4326) can interpolate at trace lon/lat
+    directly, and closes the longitude seam. Pure / network-free so it can be
+    unit-tested.
     """
     out = da.assign_coords(longitude=(((da.longitude + 180) % 360) - 180))
     out = out.sortby("longitude").sortby("latitude")
-    return out.rename({"longitude": "x", "latitude": "y"})
+    return wrap_antimeridian(out.rename({"longitude": "x", "latitude": "y"}))
 
 
 @register
@@ -95,7 +110,9 @@ class ERA5:
             mean.name = self.out_column
             mean.to_netcdf(self._cache_path)
             logger.info("era5: cached mean field -> %s", self._cache_path)
-        return xr.open_dataarray(self._cache_path)
+        # wrap_antimeridian on the load path too: caches written before the seam
+        # fix lack the +180 column, and rebuilding one means a ~6 GB GCS read.
+        return wrap_antimeridian(xr.open_dataarray(self._cache_path))
 
     def sample(self, src, lon: np.ndarray, lat: np.ndarray) -> dict[str, np.ndarray]:
         da = self._build_or_load(src)

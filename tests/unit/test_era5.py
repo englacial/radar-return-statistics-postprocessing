@@ -9,7 +9,7 @@ bilinear interpolation exact, so we can assert analytically.
 import numpy as np
 import xarray as xr
 
-from radar_postproc.datasets.era5 import to_xy_field
+from radar_postproc.datasets.era5 import to_xy_field, wrap_antimeridian
 from radar_postproc.sampling import sample_raster
 
 # Synthetic global-ish grid: longitude 0..360 ascending, latitude DESCENDING.
@@ -33,8 +33,8 @@ def test_to_xy_field_normalizes_axes():
     da, _ = _field()
     out = to_xy_field(da)
     assert out.dims == ("y", "x")
-    # x now spans -180..180 and is ascending; y ascending.
-    assert out.x.min() >= -180 and out.x.max() < 180
+    # x now spans -180..180 inclusive (the +180 wrap column) and is ascending.
+    assert out.x.min() == -180 and out.x.max() == 180
     assert np.all(np.diff(out.x.values) > 0)
     assert np.all(np.diff(out.y.values) > 0)
 
@@ -56,3 +56,22 @@ def test_negative_longitudes_match_eastern_values():
     field = to_xy_field(da)
     got = sample_raster(field, np.array([-75.0]), np.array([40.0]), "EPSG:4326")
     assert np.isclose(got[0], a * (-75.0) + b * 40.0 + c, rtol=1e-6)
+
+
+def test_to_xy_field_closes_the_longitude_seam():
+    """ERA5 ends at +179.75; without a wrap column, points east of it sample NaN.
+
+    In EPSG:3031 that is a one-cell stripe straight down from the pole through
+    the Ross Ice Shelf.
+    """
+    da, _ = _field()
+    field = to_xy_field(da)
+    assert float(field["x"].max()) == 180.0
+    np.testing.assert_array_equal(field.isel(x=-1).values, field.isel(x=0).values)
+    assert np.isfinite(field.interp(x=179.9, y=-80.0).values).all()
+
+
+def test_wrap_antimeridian_is_idempotent():
+    da, _ = _field()
+    field = to_xy_field(da)
+    assert wrap_antimeridian(field).sizes["x"] == field.sizes["x"]

@@ -70,12 +70,12 @@ The headline accuracy and calibration numbers:
 
 | quantity | value |
 |---|---|
-| CV RMSE (5-fold, spatially blocked) | 14.11 dB (fold range 12.88–14.93) |
+| CV RMSE (5-fold, spatially blocked) | 14.11 dB (fold range 12.87–14.93) |
 | CV 1σ coverage | 0.68 |
-| Held-out test RMSE | 13.84 dB (n = 1,433 + 90 censored) |
+| Held-out test RMSE | 13.83 dB (n = 1,433 + 90 censored) |
 | Held-out test 1σ coverage | 0.70 |
 | Fully-linear baseline (same layers) | CV 14.40 dB / test 14.23 dB |
-| Sampler diagnostics | 0 divergences, R̂ ≤ 1.009 |
+| Sampler diagnostics | 0 divergences, R̂ ≤ 1.005 |
 
 Posterior distributions of all 15 learned parameters, converted to physical units (the z-score normalization is an invertible affine transform, and the normalizer constants are stored in `posterior.nc`, so this conversion is exact). Attenuation-side parameters become two-way dB/km via σ_target/σ_thickness; reflectivity-side parameters become dB contributions to RSSNR (sign-flipped for the −refl convention); covariate effects are fully per-unit (e.g. dB/km/K, dB/km/(mW/m²)); θ, τ, and σ are natively in dB. Intercept-like values are referenced to the mean covariate conditions of the training set.
 

@@ -223,14 +223,19 @@ def plot_cell_maps(df: pd.DataFrame, cells: pd.DataFrame, target: str,
                         cmap="viridis", rasterized=True, label=target)
         fig.colorbar(sc, ax=ax, shrink=0.6, label=f"{target}")
         sheet_cells = cells[cells["ice_sheet"] == sheet]
+        # Test cells draw above their neighbours: adjacent cells share an edge, so
+        # at equal zorder a later grey rectangle paints over a red one's border.
         for _, row in sheet_cells.iterrows():
             x0, y0 = row["x_min"], row["y_min"]
-            color = "tab:red" if row["is_test"] else "0.4"
+            test = row["is_test"]
+            color = "tab:red" if test else "0.4"
             ax.add_patch(plt.Rectangle((x0, y0), cell_size_m, cell_size_m,
-                                       fill=False, edgecolor=color, linewidth=1))
+                                       fill=False, edgecolor=color, linewidth=1,
+                                       zorder=3 if test else 2))
             ax.annotate(f"{row['cell_id']}\nn={row['n_obs']}",
                         (x0 + cell_size_m / 2, y0 + cell_size_m / 2),
-                        ha="center", va="center", fontsize=7, color=color)
+                        ha="center", va="center", fontsize=7, color=color,
+                        zorder=4)
         ax.set_aspect("equal")
         ax.set_title(f"{sheet}: blocking cells ({cell_size_m/1000:.0f} km), "
                      f"{len(has_obs)} grid points with obs; red = test")

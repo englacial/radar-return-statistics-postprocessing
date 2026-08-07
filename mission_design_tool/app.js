@@ -275,7 +275,13 @@ function drawScaleBar(ctx, geom, nx, w, h, dpr) {
   ctx.restore();
 }
 
-function drawMap(canvas, sheetMeta, cells, values, vmin, vmax, lut, coast) {
+/**
+ * Render one sheet. `size` is {cssWidth, scale}: on screen, scale is the device
+ * pixel ratio; for export it is a larger multiplier, so the vector overlays
+ * (coastline, grounding line, scale bar) are drawn at full resolution rather
+ * than being upscaled from a screen-sized bitmap.
+ */
+function drawMap(canvas, sheetMeta, cells, values, vmin, vmax, lut, coast, size) {
   const [ny, nx] = sheetMeta.shape;
   const off = document.createElement('canvas');
   off.width = nx; off.height = ny;
@@ -291,10 +297,12 @@ function drawMap(canvas, sheetMeta, cells, values, vmin, vmax, lut, coast) {
   }
   off.getContext('2d').putImageData(img, 0, 0);
 
-  const dpr = window.devicePixelRatio || 1;
-  const w = canvas.clientWidth || 400, h = Math.round((w * ny) / nx);
-  canvas.width = w * dpr; canvas.height = h * dpr;
-  canvas.style.height = h + 'px';
+  const onScreen = !size;
+  const cssWidth = (size && size.cssWidth) || canvas.clientWidth || 400;
+  const dpr = (size && size.scale) || window.devicePixelRatio || 1;
+  canvas.width = Math.round(cssWidth * dpr);
+  canvas.height = Math.round((cssWidth * dpr * ny) / nx);
+  if (onScreen) canvas.style.height = `${Math.round((cssWidth * ny) / nx)}px`;
   const ctx = canvas.getContext('2d');
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.imageSmoothingEnabled = true;
@@ -370,7 +378,7 @@ function chart(canvas, { xlim, ylim, xlabel, ylabel, series, yfmt, vlines }) {
 
 // ─────────────────────────── main ───────────────────────────
 
-const state = { meta: null, data: {}, values: {}, snr: {}, coast: {}, snrRange: null };
+const state = { meta: null, data: {}, values: {}, snr: {}, coast: {}, snrRange: null, vlim: [0, 80] };
 globalThis.__APP_STATE__ = state;   // debug/test hook: inspectable from the console
 
 async function init() {
@@ -652,7 +660,7 @@ function update() {
     else state.values[sheet].set(state.snr[sheet]);
   }
 
-  const [vmin, vmax] = [0, 80];
+  const [vmin, vmax] = state.vlim = [0, 80];
   $('map-title').textContent = QUANTITY[q].title;
   for (const sheet of SHEETS) {
     drawMap($(`map-${sheet}`), state.meta.sheets[sheet], state.data[sheet],
@@ -966,19 +974,68 @@ function download(name, blob) {
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
 
+/** Device pixels per CSS pixel in the exported figure. 4x puts Antarctica at
+    roughly twice its native 5 km raster, so the outlines stay crisp. */
+const EXPORT_SCALE = 4;
+
 function exportPNG() {
-  // Stitch both maps side by side with a title strip.
-  const a = $('map-antarctic'), g = $('map-greenland');
-  const pad = 12, head = 30;
+  const p = readParams();
+  const [vmin, vmax] = state.vlim;
+  // Re-render at export resolution instead of upscaling the screen canvases.
+  const maps = SHEETS.map((sheet) => {
+    const off = document.createElement('canvas');
+    drawMap(off, state.meta.sheets[sheet], state.data[sheet], state.values[sheet],
+            vmin, vmax, LUT, state.coast[sheet],
+            { cssWidth: $(`map-${sheet}`).clientWidth || 400, scale: EXPORT_SCALE });
+    return off;
+  });
+
+  const pad = 12 * EXPORT_SCALE;
+  const head = 30 * EXPORT_SCALE;
+  const barH = 13 * EXPORT_SCALE;
+  const foot = barH + 26 * EXPORT_SCALE;
+  const mapH = Math.max(...maps.map((m) => m.height));
+
   const c = document.createElement('canvas');
-  c.width = a.width + g.width + pad * 3;
-  c.height = Math.max(a.height, g.height) + head + pad * 2;
+  c.width = maps.reduce((a, m) => a + m.width, 0) + pad * (maps.length + 1);
+  c.height = head + pad + mapH + pad + foot;
   const ctx = c.getContext('2d');
-  ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, c.width, c.height);
-  ctx.fillStyle = '#16181d'; ctx.font = '600 18px system-ui';
-  ctx.fillText(`${$('map-title').textContent} — surface SNR ${scalars(readParams(), overrides).surface_snr_dB.toFixed(1)} dB`, pad, head - 8);
-  ctx.drawImage(a, pad, head + pad);
-  ctx.drawImage(g, a.width + pad * 2, head + pad);
+  // No background fill: the figure is transparent apart from what is drawn, so
+  // it drops onto a slide or page of any colour.
+  const INK = '#16181d';
+
+  ctx.fillStyle = INK;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'alphabetic';
+  ctx.font = `600 ${18 * EXPORT_SCALE}px system-ui, sans-serif`;
+  ctx.fillText(`${$('map-title').textContent} — surface SNR `
+    + `${scalars(p, overrides).surface_snr_dB.toFixed(1)} dB`, pad, head - 8 * EXPORT_SCALE);
+
+  let x = pad;
+  for (const m of maps) { ctx.drawImage(m, x, head + pad); x += m.width + pad; }
+
+  // Colour bar, centred beneath the maps.
+  const barW = Math.round(c.width * 0.45);
+  const barX = Math.round((c.width - barW) / 2);
+  const barY = head + pad + mapH + pad;
+  for (let i = 0; i < barW; i++) {
+    const t = Math.min(255, Math.round((i / (barW - 1)) * 255)) * 3;
+    ctx.fillStyle = `rgb(${LUT[t]},${LUT[t + 1]},${LUT[t + 2]})`;
+    ctx.fillRect(barX + i, barY, 1, barH);
+  }
+  ctx.strokeStyle = INK;
+  ctx.lineWidth = Math.max(1, EXPORT_SCALE * 0.4);
+  ctx.strokeRect(barX, barY, barW, barH);
+
+  ctx.fillStyle = INK;
+  ctx.textBaseline = 'top';
+  ctx.font = `${11 * EXPORT_SCALE}px system-ui, sans-serif`;
+  for (let i = 0; i <= 4; i++) {
+    const v = vmin + (i / 4) * (vmax - vmin);
+    ctx.textAlign = i === 0 ? 'left' : i === 4 ? 'right' : 'center';
+    ctx.fillText(`${v.toFixed(0)}${i === 4 ? ' dB' : ''}`,
+                 barX + (i / 4) * barW, barY + barH + 4 * EXPORT_SCALE);
+  }
   c.toBlob((b) => download('basal_snr_map.png', b));
 }
 

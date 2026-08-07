@@ -96,6 +96,17 @@ either the median layer or the 20th percentile
 distributions can show the posterior predictive mixture rather than the point
 estimates.
 
+**Radar equation.** The coherent surface return is computed in one of two forms
+from **Haynes, M. S. et al. (2018), "Surface and Subsurface Radar Equations for
+Planetary Radar Sounders", IEEE TGRS**,
+[doi:10.1109/TGRS.2018.2811509](https://doi.org/10.1109/TGRS.2018.2811509):
+eq 21 (infinite mirror, the default) which the paper recommends for terrestrial
+airborne sounders and which CReSIS/OPR calibrate to, or eq 18 (Fresnel zone)
+which it recommends for smooth coherent targets such as orbital sounders. They
+differ by exactly 6.02 dB. Only the absolute surface term moves — the per-cell
+surface-to-bed correction is a ratio, so the constant cancels there, and in
+sidelobe-limited cells the surface term drops out of the answer altogether.
+
 **Surface/bed overlap.** Where the ice is thin enough that the bed echo returns
 before the transmitted pulse ends, the two returns overlap. Two treatments:
 

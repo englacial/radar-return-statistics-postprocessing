@@ -219,6 +219,10 @@ pre.eq i { color: var(--eng-primary); font-style: italic; }
 }
 .fields select { text-align: left; }
 .fields label.wide { grid-template-columns: 1fr; gap: 3px; }
+.fields .note {
+  font-size: 11px; line-height: 1.45; color: var(--muted); margin-top: 1px;
+}
+.fields .note a { color: inherit; }
 .fields label.check { grid-template-columns: 18px 1fr; }
 .fields label.check input { width: 16px; height: 16px; }
 .fields input.flag-warn { border-color: var(--warn); background: var(--warn-bg); }

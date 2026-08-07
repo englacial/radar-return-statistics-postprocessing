@@ -4,8 +4,8 @@ import { gunzipSync } from 'node:zlib';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { AUTO, AUTO_IDS } from './auto.js';
-import { T_ANTENNA_FLOOR, scalars, basalSNR, orbitalSpeeds, overlapDetail,
-         percentileSNR, skyTemperature } from './physics.js';
+import { RADAR_EQUATION, T_ANTENNA_FLOOR, scalars, basalSNR, orbitalSpeeds,
+         overlapDetail, percentileSNR, skyTemperature } from './physics.js';
 import { CHECKS, check as runChecks, hasError } from './warnings.js';
 import { WEIGHTING_LOSS_dB, sidelobeLevel } from './sidelobes.js';
 
@@ -40,6 +40,10 @@ const base = {
   gain_tx_dBi: 3, gain_rx_dBi: 3, system_loss_dB: 0, noise_figure_dB: 4,
   surface_reflectivity_dB: -10, epsilon_r: 3.17,
   overlap_mode: 'sidelobe', sidelobe_window: 'rect',
+  // The reference notebook uses lambda^2/(4*pi*h)^2 — Haynes 2018 eq 18. The
+  // tool now defaults to eq 21, which is 6.02 dB lower, so pin the form here
+  // or the notebook cases cannot reproduce.
+  radar_equation: 'fresnel',
 };
 
 // --- link budget vs the notebooks -------------------------------------------
@@ -275,6 +279,39 @@ for (const sheet of ['antarctic', 'greenland']) {
   console.log(`     ${sheet} @112 dB surface SNR: ` +
               `>=0 dB ${(frac(0) * 100).toFixed(1)}%, >=10 dB ${(frac(10) * 100).toFixed(1)}%, ` +
               `>=40 dB ${(frac(40) * 100).toFixed(1)}%`);
+}
+
+// --- radar equation form (Haynes et al. 2018) -------------------------------
+// eq 18 (Fresnel zone) and eq 21 (infinite mirror) differ by exactly a factor
+// of 4 in the constant; only the absolute surface term should move.
+{
+  const f = scalars({ ...base, radar_equation: 'fresnel' });
+  const i = scalars({ ...base, radar_equation: 'infinite' });
+  check('eq 18 vs eq 21 spreading differ by 6.02 dB',
+        f.spreading_surface_dB - i.spreading_surface_dB, 10 * Math.log10(4), 0.001);
+  check('eq 18 is the more optimistic', f.surface_snr_dB > i.surface_snr_dB ? 0 : 1, 0, 0);
+  check('an unknown form falls back to the default (eq 21)',
+        scalars({ ...base, radar_equation: 'nonsense' }).spreading_surface_dB,
+        i.spreading_surface_dB, 1e-9);
+  check('both forms are labelled', RADAR_EQUATION.fresnel.label && RADAR_EQUATION.infinite.label ? 0 : 1, 0, 0);
+  // The per-cell surface-to-bed correction is a ratio, so the constant cancels
+  // and the form shifts every cell by the same 6.02 dB — but only where the bed
+  // is noise-limited. Where the surface sidelobe dominates, the surface term
+  // cancels out of the answer entirely and the form makes no difference at all.
+  const c = load('antarctic');
+  const runBoth = (mode) => {
+    const pf = { ...base, radar_equation: 'fresnel', overlap_mode: mode };
+    const pi = { ...base, radar_equation: 'infinite', overlap_mode: mode };
+    const a = new Float32Array(c.n), b2 = new Float32Array(c.n);
+    basalSNR(scalars(pf), pf, c.thk, c.mu, a);
+    basalSNR(scalars(pi), pi, c.thk, c.mu, b2);
+    let worst = 0;
+    for (let k = 0; k < c.n; k += 97) worst = Math.max(worst, Math.abs((a[k] - b2[k]) - 10 * Math.log10(4)));
+    return worst;
+  };
+  check('noise-limited: the form shifts every cell by 6.02 dB', runBoth('adaptive'), 0, 1e-4);
+  check('sidelobe-limited: the form makes no difference (surface cancels)',
+        runBoth('sidelobe') > 6 ? 0 : 1, 0, 0);
 }
 
 // --- surface/bed overlap ----------------------------------------------------

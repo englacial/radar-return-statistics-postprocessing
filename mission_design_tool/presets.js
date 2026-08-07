@@ -76,6 +76,34 @@ export const PRESETS = [
     },
   },
   {
+    id: 'mcords',
+    name: 'Airborne radar',
+    icon: 'aircraft',
+    note: 'Loosely derived from MCoRDS 3 on the NASA P-3',
+    values: {
+      altitude_m: 500,            // typical survey height above the ice
+      velocity_ms: 130,           // P-3 survey speed
+      frequency_Hz: 195e6,        // 180-210 MHz chirp
+      bandwidth_Hz: 30e6,
+      // 337 W per element with 3 elements ping-ponged; 6 dBi per element
+      // (OPR system_dB) plus 10*log10(3) of transmit array factor.
+      tx_power_W: 1011,
+      gain_tx_dBi: 10.8,
+      gain_rx_dBi: 14.5,          // 7-element fuselage array, coherently combined
+      // Deep waveform: 10 us at 11 of 34 presums, so 12 kHz / (34/11) = 3882 Hz.
+      pulse_length_s: 10e-6,
+      pri_s: 1 / 3882,
+      system_loss_dB: 6.4,        // 3 dB feed network + 3.4 dB window/taper losses
+      noise_figure_dB: 3,
+      surface_reflectivity_dB: -11,
+      max_ice_thickness_m: 3400,
+      radar_equation: 'infinite', // Haynes 2018 eq 21, the airborne form
+      // MCoRDS carries a short low-gain waveform for the surface and long
+      // high-gain ones for depth, so it never eats its own surface sidelobes.
+      overlap_mode: 'adaptive',
+    },
+  },
+  {
     id: 'custom',
     name: 'Custom',
     icon: 'sliders',

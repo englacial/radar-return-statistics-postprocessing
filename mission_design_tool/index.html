@@ -169,6 +169,14 @@
       <div class="fields">
         <label class="derived">Azimuth integration distance <span class="u">m</span>
           <input type="number" id="azimuth_distance_m" data-derived step="10" min="0"></label>
+        <label class="wide">Radar equation
+          <select id="radar_equation">
+            <option value="infinite">Coherent target, infinite (eq 21)</option>
+            <option value="fresnel">Coherent target, Fresnel zone (eq 18)</option>
+          </select>
+          <span class="note">Equation numbers from
+            <a href="https://doi.org/10.1109/TGRS.2018.2811509" target="_blank" rel="noreferrer">Haynes
+            et al. (2018)</a>.</span></label>
         <label class="wide">Surface / bed overlap
           <select id="overlap_mode">
             <option value="sidelobe">Estimate surface sidelobes</option>

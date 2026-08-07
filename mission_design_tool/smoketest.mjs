@@ -174,15 +174,27 @@ function query(root, selector) {
 }
 
 // ── canvas / window stubs ──────────────────────────────────────────────────
-const ctx2d = (canvas) => new Proxy({
-  canvas,
-  createImageData: (w, h) => ({ data: new Uint8ClampedArray(w * h * 4), width: w, height: h }),
-  measureText: () => ({ width: 0 }),
-  getPropertyValue: () => '#888888',
-}, {
-  get: (t, k) => (k in t ? t[k] : typeof k === 'string' ? () => {} : undefined),
-  set: () => true,
-});
+// Records the drawing calls a test might want to assert on; everything else
+// is a no-op so app.js can draw freely.
+const RECORDED = new Set(['fillRect', 'strokeRect', 'fillText', 'drawImage', 'stroke']);
+const ctx2d = (canvas) => {
+  canvas._ops = canvas._ops || [];
+  const real = {
+    canvas,
+    createImageData: (w, h) => ({ data: new Uint8ClampedArray(w * h * 4), width: w, height: h }),
+    measureText: () => ({ width: 0 }),
+    getPropertyValue: () => '#888888',
+  };
+  return new Proxy(real, {
+    get: (t, k) => {
+      if (k in t) return t[k];
+      if (typeof k !== 'string') return undefined;
+      if (RECORDED.has(k)) return (...args) => canvas._ops.push({ op: k, args });
+      return () => {};
+    },
+    set: () => true,
+  });
+};
 
 const root = makeEl(tree, null);
 const body = query(root, 'body')[0] || root;
@@ -415,8 +427,11 @@ ok(presets.every((b) => b.innerHTML.includes('<svg')), 'every preset carries an 
     for (const id of AUTO_IDS_ON_PAGE.filter((k) => pr.values[k] !== undefined)) {
       const el = document.getElementById(id);
       const unit = el.dataset.unit ? parseFloat(el.dataset.unit) : 1;
-      ok(Math.abs(parseFloat(el.value) * unit - pr.values[id]) < 1e-9,
-         `${pr.id}: ${id} shows the pinned value (${el.value})`);
+      // The box is rounded for legibility (formatForBox); the stored override
+      // stays exact, so allow one display unit of rounding here.
+      const shown = parseFloat(el.value), want = pr.values[id] / unit;
+      ok(Math.abs(shown - want) <= Math.max(0.5, Math.abs(want) * 1e-9),
+         `${pr.id}: ${id} shows the pinned value (${el.value} vs ${want.toFixed(2)})`);
       ok(el.closest('label').classList.contains('is-overridden'),
          `${pr.id}: ${id} is marked as overridden`);
     }
@@ -536,6 +551,16 @@ q.value = 'p20';
 q.dispatch('input');
 ok(document.getElementById('map-title').textContent.includes('20th'), 'percentile view switches');
 {
+  const eq = document.getElementById('radar_equation');
+  const read = () => parseFloat(
+    /Spreading to surface<\/span><span>(-?[\d.]+)/.exec(document.getElementById('budget').innerHTML)[1]);
+  const was = eq.value;
+  eq.value = 'fresnel'; eq.dispatch('input'); const a = read();
+  eq.value = 'infinite'; eq.dispatch('input'); const b = read();
+  ok(Math.abs((a - b) - 6.02) < 0.02, `radar equation toggle moves spreading by ${(a-b).toFixed(2)} dB`);
+  eq.value = was; eq.dispatch('input');
+}
+{
   const S2 = globalThis.__APP_STATE__;
   let shifted = 0, worse = 0;
   for (let i = 0; i < S2.data.antarctic.n; i += 997) {
@@ -617,7 +642,37 @@ tgt.value = '10';
 tgt.dispatch('input');
 
 ok(document.getElementById('export-csv') === null, 'CSV export removed');
-document.getElementById('export-png').dispatch('click');
+// the export must re-render at higher resolution, not upscale the screen canvas
+{
+  const made = [];
+  const realCreate = document.createElement;
+  document.createElement = (tag) => { const el = realCreate(tag); if (tag === 'canvas') made.push(el); return el; };
+  document.getElementById('export-png').dispatch('click');
+  document.createElement = realCreate;
+  const screenW = document.getElementById('map-antarctic').width;
+  const biggest = Math.max(...made.map((c) => c.width || 0));
+  ok(biggest > screenW, `export renders larger than the screen canvas (${biggest} > ${screenW} px)`);
+  ok(made.length >= 3, `export built ${made.length} canvases (one per sheet plus the sheet)`);
+
+  // the composite is the widest canvas built
+  const sheet = made.reduce((a, b) => ((b.width || 0) > (a.width || 0) ? b : a));
+  const mapH = Math.max(...made.filter((m) => m !== sheet).map((m) => m.height || 0));
+  ok(sheet.height - mapH > 250,
+     `composite leaves ${sheet.height - mapH} px for the title and colour bar`);
+
+  const ops = sheet._ops || [];
+  // transparent: nothing may paint over the whole canvas
+  const covering = ops.filter((o) => o.op === 'fillRect'
+    && o.args[2] >= sheet.width && o.args[3] >= sheet.height);
+  ok(covering.length === 0, 'export background is left transparent');
+  // a colour bar is a long run of 1 px wide fillRects, then an outline
+  const bar = ops.filter((o) => o.op === 'fillRect' && o.args[2] === 1);
+  ok(bar.length > 200, `colour bar drawn as ${bar.length} gradient columns`);
+  ok(ops.some((o) => o.op === 'strokeRect'), 'colour bar is outlined');
+  const labels = ops.filter((o) => o.op === 'fillText');
+  ok(labels.length >= 6, `${labels.length} text draws (title plus tick labels)`);
+  ok(labels.some((o) => String(o.args[0]).includes('dB')), 'colour bar labelled in dB');
+}
 document.getElementById('share').dispatch('click');
 ok(true, 'PNG export and share run without throwing');
 

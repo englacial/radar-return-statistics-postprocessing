@@ -49,7 +49,8 @@ export function scalars(p, ov = {}) {
   const tx_power_W = x.tx_power_W = resolve('tx_power_W', p, x, ov);
   const tx_power_dBm = db(tx_power_W / 1e-3);
 
-  const spreading_surface_dB = db(lambda ** 2 / (4 * Math.PI * p.altitude_m) ** 2);
+  const eqn = RADAR_EQUATION[p.radar_equation] || RADAR_EQUATION.infinite;
+  const spreading_surface_dB = db(lambda ** 2 / (eqn.denom * p.altitude_m ** 2));
   const surface_return_dBm =
     tx_power_dBm + p.gain_tx_dBi + p.gain_rx_dBi + spreading_surface_dB +
     p.surface_reflectivity_dB - p.system_loss_dB;
@@ -87,6 +88,7 @@ export function scalars(p, ov = {}) {
     prf: 1 / pri_s, duty_cycle, max_tx_W, tx_power_W, tx_power_dBm,
     spreading_surface_dB, surface_return_dBm, noise_dBm, coherent_aperture_m,
     noise_factor, sky_temp_K, noise_temp_K, system_temp_K, echo_window_s,
+    radar_equation: eqn.label,
     antenna_floor_K: T_ANTENNA_FLOOR,
     weighting_loss_dB,
     pulses_in_flight: Math.max(0, Math.floor(twtt_surface / pri_s)),
@@ -137,6 +139,30 @@ export function basalSNR(s, p, thk, mu, out) {
   }
   return out;
 }
+
+/**
+ * Form of the radar equation for the coherent surface return, after
+ * Haynes, M. S. et al. (2018), "Surface and Subsurface Radar Equations for
+ * Planetary Radar Sounders", IEEE TGRS. The two differ by a constant factor of
+ * 4 (6.02 dB), which the paper notes "can have a nontrivial impact on the link
+ * budget":
+ *
+ *   fresnel  (eq 18)  Pr = Pt Gt Gr |G|^2 lambda^2 / ((4 pi)^2 R^2)
+ *                     Recommended for smooth, flat, coherent Fresnel-zone
+ *                     targets; accounts for spherical wavefronts on the target.
+ *   infinite (eq 21)  Pr = Pt Gt Gr |G|^2 lambda^2 / (2^6 pi^2 R^2)
+ *                     The classic image-source result. Recommended only where
+ *                     infinite-surface assumptions hold, which the paper says
+ *                     "will generally only be true for terrestrial airborne
+ *                     sounders". This is the form CReSIS/OPR calibrate to.
+ *
+ * Only the absolute surface term is affected; the per-cell surface-to-bed
+ * spreading correction is a ratio, so the constant cancels there.
+ */
+export const RADAR_EQUATION = {
+  fresnel: { label: 'Coherent target, Fresnel zone (eq 18)', denom: (4 * Math.PI) ** 2 },
+  infinite: { label: 'Coherent target, infinite (eq 21)', denom: 2 ** 6 * Math.PI ** 2 },
+};
 
 export const T0_REF = 290;   // reference temperature for noise figure [K]
 

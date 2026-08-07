@@ -81,8 +81,7 @@
       <li><b>Pulse-compression gain cancels inside RSSNR</b> — it applies to the surface and
         bed returns alike — so it is added back once here, for the bed.</li>
       <li><b>The noise floor is sky-dominated at VHF.</b> Antenna temperature defaults to the
-        galactic background (ITU-R P.372), ≈3700 K at 60 MHz, assuming a low-gain antenna that
-        sees mostly sky. A directive antenna looking down at the ice would see less.</li>
+        galactic background (ITU-R P.372) — ≈3700 K at 60 MHz — or 270 K, whichever is higher.</li>
       <li><b>Clutter is not modelled.</b> Where the ice is thin enough that the bed echo
         returns before the pulse ends, the tool charges the bed for the compressed surface
         return's sidelobe pedestal — but surface roughness scatter arrives over the same

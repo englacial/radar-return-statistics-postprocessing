@@ -427,6 +427,12 @@ for (const btn of designs) {
   ok(document.getElementById('budget').innerHTML.includes('dBm'),
      `preset survives click: ${presetIdOf(btn)}`);
   ok(selected() === presetIdOf(btn), `preset selects itself: ${presetIdOf(btn)}`);
+  // Converting SI to display units divides by the unit, which is inexact in
+  // binary floating point; no box may show the resulting tail of digits.
+  const ugly = [...document.querySelectorAll('#panel input')]
+    .filter((el) => el.type !== 'checkbox' && /\.\d{4,}/.test(String(el.value)))
+    .map((el) => `${el.id}="${el.value}"`);
+  ok(ugly.length === 0, `${presetIdOf(btn)}: no float tails in the boxes${ugly.length ? ' — ' + ugly.join(', ') : ''}`);
 }
 
 // a preset that sets a field a later preset omits must not leak across

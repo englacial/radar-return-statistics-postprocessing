@@ -57,6 +57,7 @@ export function scalars(p, ov = {}) {
   // T_sys = T_antenna + T0(F - 1). Multiplying the antenna temperature by the
   // noise factor instead would only be right when T_antenna is exactly T0.
   const sky_temp_K = x.sky_temp_K = skyTemperature(p.frequency_Hz);
+  x.antenna_floor_K = T_ANTENNA_FLOOR;
   const noise_temp_K = x.noise_temp_K = resolve('noise_temp_K', p, x, ov);
   const noise_factor = 10 ** (p.noise_figure_dB / 10);
   const system_temp_K = noise_temp_K + T0_REF * (noise_factor - 1);
@@ -86,6 +87,7 @@ export function scalars(p, ov = {}) {
     prf: 1 / pri_s, duty_cycle, max_tx_W, tx_power_W, tx_power_dBm,
     spreading_surface_dB, surface_return_dBm, noise_dBm, coherent_aperture_m,
     noise_factor, sky_temp_K, noise_temp_K, system_temp_K, echo_window_s,
+    antenna_floor_K: T_ANTENNA_FLOOR,
     weighting_loss_dB,
     pulses_in_flight: Math.max(0, Math.floor(twtt_surface / pri_s)),
     azimuth_distance_m, integration_time_s, pulses_integrated, azimuth_gain_dB,
@@ -137,6 +139,17 @@ export function basalSNR(s, p, thk, mu, out) {
 }
 
 export const T0_REF = 290;   // reference temperature for noise figure [K]
+
+/**
+ * Floor on antenna temperature [K].
+ *
+ * A nadir sounder's main beam is on the ice, not the sky, and the antenna and
+ * its feed contribute their own physical temperature through ohmic loss. So the
+ * antenna cannot be much colder than the surface it looks at, whatever the
+ * galactic background is doing — which matters above ~200 MHz, where the sky
+ * term alone would fall to a few tens of kelvin.
+ */
+export const T_ANTENNA_FLOOR = 270;
 
 /**
  * Sky noise temperature from the galactic background.

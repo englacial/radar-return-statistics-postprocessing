@@ -122,12 +122,19 @@ Weighting is modelled on **receive**, costing 1.76 dB of SNR for Hann rather
 than the 4.26 dB of transmit energy a transmit-side taper would cost.
 
 Noise is composed as `T_sys = T_antenna + T0(F − 1)`, with the antenna
-temperature defaulting to the galactic sky background — at VHF that dominates a
-sounder's noise floor (≈3700 K at 60 MHz against a few hundred K from the
-receiver). The `Fam = 52 − 23 log10(f/MHz)` dB form is the median galactic noise
-figure from **ITU-R P.372** (*Radio noise*); the underlying spectrum is
-**Cane, H. V. (1979), "Spectra of the non-thermal radio radiation from the
-galactic polar regions", MNRAS 189, 465**.
+temperature defaulting to the **greater of** the galactic sky background and a
+270 K floor. The sky term dominates at VHF (≈3700 K at 60 MHz against a few
+hundred K from the receiver) and follows `Fam = 52 − 23 log10(f/MHz)` dB, the
+median galactic noise figure from **ITU-R P.372** (*Radio noise*); the
+underlying spectrum is **Cane, H. V. (1979), "Spectra of the non-thermal radio
+radiation from the galactic polar regions", MNRAS 189, 465**.
+
+The floor exists because a nadir sounder's main beam is aimed at the ice, not
+the sky, and the antenna and feed contribute their own physical temperature
+through ohmic loss — so the antenna cannot be much colder than the surface it
+looks at. It binds above roughly 200 MHz, where the galactic term alone would
+fall to a few tens of kelvin, and costs about 1.0 dB at 300 MHz and 1.3 dB at
+450 MHz.
 
 `selftest.mjs` checks the data path end to end and pins the link budget to the
 two cases in `reference/UAV IPR Link Budget.ipynb` (surface SNR 100.74 dB and

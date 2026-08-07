@@ -130,6 +130,22 @@ const DERIVED = AUTO_IDS;              // the fields auto.js can supply
 const overrides = {};                  // always SI, whatever the box displays
 
 const unitOf = (el) => (el.dataset.unit ? parseFloat(el.dataset.unit) : 1);
+
+/**
+ * A number as it should appear in an input box.
+ *
+ * Converting SI to display units divides by the unit, and that division is not
+ * exact in binary floating point — 20e-6 / 1e-6 is 20.000000000000004. Every
+ * path that writes a computed number into a box goes through here, so none of
+ * them can leak a tail of digits.
+ */
+function formatForBox(v) {
+  if (!Number.isFinite(v)) return '';
+  if (v === 0) return '0';
+  const abs = Math.abs(v);
+  const digits = abs >= 100 ? 0 : abs >= 1 ? 2 : Math.max(2, 2 - Math.floor(Math.log10(abs)));
+  return String(Number(v.toFixed(digits)));
+}
 const toSI = (el) => parseFloat(el.value) * unitOf(el);
 
 /** Record an auto field's override, or clear it if the box is empty/unparseable.
@@ -163,8 +179,7 @@ function writeDerived(s) {
     // un-overridden, and refilling it there would overwrite the keystroke the
     // user is part-way through; the blur handler restores it on the way out.
     if (!on && el !== document.activeElement) {
-      const v = s[id] / unitOf(el);
-      el.value = v >= 100 ? v.toFixed(0) : v.toFixed(2);
+      el.value = formatForBox(s[id] / unitOf(el));
     }
   }
 }
@@ -468,12 +483,12 @@ function setPresetValues(id) {
       // A preset may pin an auto field — the same thing as typing into the box.
       if (preset.values[el.id] !== undefined) {
         overrides[el.id] = preset.values[el.id];   // stored in SI, like any override
-        el.value = want;
+        el.value = formatForBox(want);
       }
       continue;
     }
     if (el.type === 'checkbox') el.checked = !!want;
-    else el.value = want;
+    else el.value = typeof want === 'number' ? formatForBox(want) : want;
   }
   return true;
 }

@@ -50,8 +50,11 @@ export const AUTO = {
 
   noise_temp_K: {
     label: 'Antenna noise temperature',
-    why: 'the galactic sky background at this frequency (ITU-R P.372)',
-    of: (p, x) => Math.round(x.sky_temp_K),
+    why: 'the galactic sky background, or the warm surface the antenna points at',
+    // The higher of the two: the galactic background dominates at VHF, and the
+    // ice the beam is aimed at (plus the antenna's own ohmic loss) sets the
+    // floor at UHF, where the sky term alone would be unphysically cold.
+    of: (p, x) => Math.round(Math.max(x.antenna_floor_K, x.sky_temp_K)),
   },
 
   tx_power_W: {

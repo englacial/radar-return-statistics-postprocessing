@@ -4,8 +4,8 @@ import { gunzipSync } from 'node:zlib';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { AUTO, AUTO_IDS } from './auto.js';
-import { scalars, basalSNR, orbitalSpeeds, overlapDetail, percentileSNR,
-         skyTemperature } from './physics.js';
+import { T_ANTENNA_FLOOR, scalars, basalSNR, orbitalSpeeds, overlapDetail,
+         percentileSNR, skyTemperature } from './physics.js';
 import { CHECKS, check as runChecks, hasError } from './warnings.js';
 import { WEIGHTING_LOSS_dB, sidelobeLevel } from './sidelobes.js';
 
@@ -132,6 +132,18 @@ check('sky temperature at 450 MHz [K]', skyTemperature(450e6), 36, 2);
 check('sky temperature falls with frequency',
       skyTemperature(60e6) > skyTemperature(300e6) ? 0 : 1, 0, 0);
 check('sky temperature floors rather than vanishing', skyTemperature(20e9) >= 20 ? 0 : 1, 0, 0);
+
+// The antenna is aimed at the ice and has ohmic loss of its own, so its
+// temperature cannot follow the sky down to a few tens of kelvin.
+{
+  const at = (f) => scalars({ ...base, frequency_Hz: f }).noise_temp_K;
+  check('VHF is sky-dominated, not floored', at(60e6), 3738, 5);
+  check('UHF falls back to the antenna floor', at(450e6), T_ANTENNA_FLOOR, 0.5);
+  check('the floor is never below the sky', at(150e6) >= skyTemperature(150e6) - 0.5 ? 0 : 1, 0, 0);
+  let bad = 0;
+  for (let f = 5e6; f < 2e9; f *= 1.2) if (at(f) < T_ANTENNA_FLOOR - 0.5) bad++;
+  check('antenna temperature never drops below the floor', bad, 0, 0);
+}
 
 // --- transmit power is monotonic in payload power ---------------------------
 {

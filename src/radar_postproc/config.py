@@ -151,6 +151,11 @@ def load_model_config(config_path: str | Path) -> dict:
     # is_greenland (ice sheet), is_floating (BedMachine mask 3),
     # is_utig (producing institution). See train.INDICATOR_BUILDERS.
     train.setdefault("indicators", ["is_greenland", "is_floating"])
+    # Indicators to also interact with every non-thickness feature, giving that
+    # group its own covariate *slopes* rather than just a level offset. Must be a
+    # subset of `indicators`. Thickness is excluded (beta_atten[indicator] already
+    # is the indicator-by-thickness interaction).
+    train.setdefault("interactions", [])
     train.setdefault("features",
                      ["bedmachine_thickness_m", "era5_t2m_mean_K", "surface_v_m_yr", "ghf_mW_m2"])
     train.setdefault("models", [{"name": "linear"}])

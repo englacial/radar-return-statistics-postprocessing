@@ -56,12 +56,10 @@ def draw_maps(layers: dict, coast: dict, label: str, out_path: Path):
         cx, cy, cm = coast[sheet]
         ax.contour(cx, cy, cm, levels=[0.5], colors="0.25", linewidths=0.5)
         ax.set_aspect("equal")
-        ax.set_title(sheet, color=INK, fontsize=11)
-        ax.set_xticks([])
-        ax.set_yticks([])
+        ax.set_axis_off()
+    # Both panels share vmin/vmax
     fig.colorbar(im, ax=axes, shrink=0.75, label=f"{label} [dB]")
-    fig.suptitle(f"{label} — shared colorscale [{vmin:.0f}, {vmax:.0f}] dB",
-                 color=INK, fontsize=12)
+    fig.suptitle(label, color=INK, fontsize=12)
     fig.savefig(out_path, dpi=140, bbox_inches="tight")
     plt.close(fig)
     print(f"wrote {out_path}")

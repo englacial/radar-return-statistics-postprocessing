@@ -43,32 +43,53 @@ def main():
     INDICATOR_STEP = {"is_greenland": "\n(Greenland − Antarctica)",
                       "is_floating": "\n(floating − grounded)"}
 
+    def base_of(c):
+        """An interaction column is `indicator * z(base)`; return (indicator, base)."""
+        for ind in INDICATOR_STEP:
+            if c.startswith(f"{ind}_x_"):
+                return ind, c.removeprefix(f"{ind}_x_")
+        return None, c
+
+    def short(c):
+        ind, base = base_of(c)
+        return SHORT[base] if ind is None else f"Δ{SHORT[base]} | {SHORT[ind]}"
+
     def per_unit(c):
         """(divisor, unit-suffix) converting a per-1sd effect to per-original-unit."""
         if c in INDICATOR_STEP:
             return 1.0, ""  # 0/1 contrast: the effect IS the step between the two states
-        return norm[c]["std"], f"/{COV_UNITS[c]}"
+        _, base = base_of(c)
+        return norm[base]["std"], f"/{COV_UNITS[base]}"
+
+    def step_note(c):
+        """Interactions are slope *offsets* for the flagged group, not absolute slopes."""
+        ind, base = base_of(c)
+        if ind is not None:
+            return f"\n(slope offset, {SHORT[ind]})"
+        return INDICATOR_STEP.get(c, "")
 
     rate = sy / st * 1000.0  # z -> dB/km (two-way)
     panels = [("α_a — attenuation rate\n@ mean conditions",
                post["alpha_atten"].values * rate, "dB/km (2-way)")]
     for c in post["covariate"].values:
         sx, suffix = per_unit(c)
-        panels.append((f"β_a[{SHORT[c]}] — Δ atten rate" + INDICATOR_STEP.get(c, ""),
+        panels.append((f"β_a[{short(c)}] — Δ atten rate" + step_note(c),
                        post["beta_atten"].sel(covariate=c).values * rate / sx,
                        f"dB/km{suffix}"))
     panels.append(("−α_r — reflectivity term\n@ mean conditions",
                    -post["alpha_refl"].values * sy, "dB"))
     for c in post["covariate"].values:
         sx, suffix = per_unit(c)
-        panels.append((f"−β_r[{SHORT[c]}] — Δ RSSNR via refl" + INDICATOR_STEP.get(c, ""),
+        panels.append((f"−β_r[{short(c)}] — Δ RSSNR via refl" + step_note(c),
                        -post["beta_refl"].sel(covariate=c).values * sy / sx,
                        f"dB{suffix}"))
     panels.append(("σ — residual scatter", post["sigma"].values * sy, "dB"))
     panels.append(("θ — detection threshold", post["theta"].values, "dB"))
     panels.append(("τ — picker softness", post["tau"].values, "dB"))
 
-    fig, axes = plt.subplots(4, 4, figsize=(16.5, 11.5))
+    ncol = 5
+    nrow = -(-(len(panels) + 1) // ncol)  # +1 leaves room for the accuracy panel
+    fig, axes = plt.subplots(nrow, ncol, figsize=(3.3 * ncol, 2.9 * nrow))
     for ax, (label, draws, unit) in zip(axes.ravel(), panels):
         ax.hist(draws, bins=60, density=True, color="tab:orange", alpha=0.35)
         ax.hist(draws, bins=60, density=True, histtype="step",

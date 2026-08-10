@@ -42,6 +42,7 @@ def main():
     target = config["split"]["target"]
     features = list(tcfg["features"])
     indicators = tuple(tcfg.get("indicators", ["is_greenland"]))
+    interactions = tuple(tcfg.get("interactions", []))
 
     df = pd.read_parquet("outputs/model/split.parquet")
     add_indicator_columns(df, list(indicators))  # whatever config asks for
@@ -65,8 +66,10 @@ def main():
         model = get_model(MODEL)
         idata, norm, _ = _fit_and_eval(model, tr, None, features, target, sampler,
                                        tcfg["censoring"], detection=tcfg["detection"],
-                                       nd_train=nd_k, indicators=indicators)
-        mu, _, _ = model.predict(idata, _design_matrix(va, features, norm, indicators))
+                                       nd_train=nd_k, indicators=indicators,
+                                       interactions=interactions)
+        mu, _, _ = model.predict(idata, _design_matrix(va, features, norm, indicators,
+                                                       interactions))
         oof[~tr_idx] = invert_normalizer(mu, norm[target])
         print(f"fold {k}: {len(va)} OOF predictions")
 

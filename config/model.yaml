@@ -63,6 +63,8 @@ train:
   # floating value); floating ice sits on a specular ocean interface, which the
   # thickness term alone does not capture.
   indicators: [is_greenland, is_floating]
+  # Give Greenland its own covariate slopes
+  interactions: [is_greenland]
   models:
     - name: linear
     - name: atten_refl

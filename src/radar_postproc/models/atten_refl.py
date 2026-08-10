@@ -55,6 +55,11 @@ class AttenReflModel(BaseBayesianModel):
 
     def mu_draws(self, posterior, X_new: np.ndarray) -> np.ndarray:
         X_new = np.asarray(X_new, dtype="float64")
+        if X_new.shape[1] != len(self.feature_names):
+            raise ValueError(
+                f"design matrix has {X_new.shape[1]} columns but the fit used "
+                f"{len(self.feature_names)} ({self.feature_names}) — a caller "
+                "likely built it without the same indicators/interactions")
         t_idx, cov_idx = self._split_columns()
         thickness = X_new[:, t_idx]
         cov = X_new[:, cov_idx]

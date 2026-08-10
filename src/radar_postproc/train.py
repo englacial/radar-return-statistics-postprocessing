@@ -55,12 +55,34 @@ def add_indicator_columns(df: pd.DataFrame, indicators: list[str]) -> None:
         df[name] = INDICATOR_BUILDERS[name](df).astype("float64")
 
 
+def interaction_names(features: list[str], interactions: tuple[str, ...],
+                      thickness_feature: str = "bedmachine_thickness_m") -> list[str]:
+    """Column names for indicator x feature interactions, in design-matrix order.
+
+    Thickness is excluded: `atten_rate` already multiplies thickness, so the plain
+    beta_atten[indicator] coefficient is the indicator-by-thickness interaction.
+    Interacting it again would be collinear.
+    """
+    return [f"{ind}_x_{f}" for ind in interactions
+            for f in features if f != thickness_feature]
+
+
 def _design_matrix(df: pd.DataFrame, features: list[str], norm: dict,
-                   indicators: tuple[str, ...] = ("is_greenland",)) -> np.ndarray:
-    """Z-scored features + raw 0/1 indicator columns appended."""
-    cols = [apply_normalizer(df[f].to_numpy(), norm[f]) for f in features]
-    for name in indicators:
-        cols.append(df[name].to_numpy(dtype="float64"))
+                   indicators: tuple[str, ...] = ("is_greenland",),
+                   interactions: tuple[str, ...] = (),
+                   thickness_feature: str = "bedmachine_thickness_m") -> np.ndarray:
+    """Z-scored features, raw 0/1 indicators, then indicator x feature products.
+
+    An interaction column is `indicator * z(feature)`, so the plain feature
+    coefficient stays the baseline (indicator = 0) slope and the interaction
+    coefficient is the *offset* in slope for the flagged group.
+    """
+    z = {f: apply_normalizer(df[f].to_numpy(), norm[f]) for f in features}
+    cols = [z[f] for f in features]
+    ind = {name: df[name].to_numpy(dtype="float64") for name in indicators}
+    cols.extend(ind[name] for name in indicators)
+    for name in interactions:
+        cols.extend(ind[name] * z[f] for f in features if f != thickness_feature)
     return np.column_stack(cols)
 
 
@@ -104,14 +126,15 @@ def _detection_block(train_df, nd_df, features, norm, target, detection):
 
 
 def _nd_logscore(model, idata, nd_df, features, norm, target,
-                 indicators=("is_greenland",)) -> float:
+                 indicators=("is_greenland",), interactions=()) -> float:
     """Mean held-out log P(no detection) over non-detect grid points (proper score)."""
     from scipy.special import logsumexp
     from scipy.stats import norm as norm_dist
 
     post = model._stacked_posterior(idata)
     mean, std = norm[target]["mean"], norm[target]["std"]
-    mu_dB = model.mu_draws(post, _design_matrix(nd_df, features, norm, indicators)) * std + mean
+    mu_dB = model.mu_draws(post, _design_matrix(nd_df, features, norm, indicators,
+                                               interactions)) * std + mean
     theta = post["theta"].values[:, None]
     tau = post["tau"].values[:, None]
     s = np.sqrt(tau**2 + (post["sigma"].values[:, None] * std) ** 2)
@@ -122,7 +145,7 @@ def _nd_logscore(model, idata, nd_df, features, norm, target,
 
 def _fit_and_eval(model, train_df, val_df, features, target, sampler, censoring,
                   detection=None, nd_train=None,
-                  indicators=("is_greenland",)) -> tuple:
+                  indicators=("is_greenland",), interactions=()) -> tuple:
     """Fit on train_df (+ optional non-detections), predict val_df.
 
     Saturated (censored) training obs enter the fit as Tobit lower bounds.
@@ -130,8 +153,8 @@ def _fit_and_eval(model, train_df, val_df, features, target, sampler, censoring,
     logscore_dB is the censoring-aware predictive log score over all of them.
     """
     norm = fit_normalizer(train_df, [*features, target])
-    feature_names = [*features, *indicators]
-    X = _design_matrix(train_df, features, norm, indicators)
+    feature_names = [*features, *indicators, *interaction_names(features, interactions)]
+    X = _design_matrix(train_df, features, norm, indicators, interactions)
     y = apply_normalizer(train_df[target].to_numpy(), norm[target])
     train_cens = _censored_mask(train_df, censoring)
     upper = np.where(train_cens, y, np.inf) if train_cens.any() else None
@@ -140,13 +163,14 @@ def _fit_and_eval(model, train_df, val_df, features, target, sampler, censoring,
         nd_train = nd_train if nd_train is not None else train_df.iloc[0:0]
         det = _detection_block(train_df, nd_train, features, norm, target, detection)
         if len(nd_train):
-            X = np.vstack([X, _design_matrix(nd_train, features, norm, indicators)])
+            X = np.vstack([X, _design_matrix(nd_train, features, norm, indicators,
+                                             interactions)])
     idata = model.fit(X, y, feature_names, upper=upper, detection=det, **sampler)
 
     metrics = None
     if val_df is not None and len(val_df):
         val_cens = _censored_mask(val_df, censoring)
-        Xv = _design_matrix(val_df, features, norm, indicators)
+        Xv = _design_matrix(val_df, features, norm, indicators, interactions)
         y_true = val_df[target].to_numpy()
         mu_mean, _, pred_std = model.predict(idata, Xv)
         mu_dB = invert_normalizer(mu_mean, norm[target])
@@ -224,6 +248,10 @@ def run_train(config_path: str, model_name: str, out_dir: str | None = None,
     df = pd.read_parquet(model_dir / "split.parquet")
     split_manifest = json.loads((model_dir / "split.manifest.json").read_text())
     indicators = tuple(tcfg["indicators"])
+    interactions = tuple(tcfg["interactions"])
+    unknown = [i for i in interactions if i not in indicators]
+    if unknown:
+        raise ValueError(f"train.interactions {unknown} not in train.indicators {list(indicators)}")
     if "is_utig" in indicators and "institution" not in df.columns:
         raise ValueError("train.indicators includes is_utig but split.parquet has no "
                          "institution column — re-run the split stage")
@@ -276,12 +304,12 @@ def run_train(config_path: str, model_name: str, out_dir: str | None = None,
             model, train_df[train_df["fold"] != k], train_df[train_df["fold"] == k],
             features, target, cv_sampler, censoring,
             detection=detection, nd_train=nd_used[nd_used["fold"] != k],
-            indicators=indicators)
+            indicators=indicators, interactions=interactions)
         m["n_nd_train"] = int((nd_used["fold"] != k).sum()) if detection["enabled"] else 0
         nd_val = nd_used[nd_used["fold"] == k]
         if detection["enabled"] and len(nd_val):
             m["nd_logscore"] = _nd_logscore(model, fold_idata, nd_val, features,
-                                            fold_norm, target, indicators)
+                                            fold_norm, target, indicators, interactions)
             m["n_nd_val"] = len(nd_val)
         m["fold"] = k
         fold_metrics.append(m)
@@ -308,7 +336,8 @@ def run_train(config_path: str, model_name: str, out_dir: str | None = None,
                    chains=tcfg["chains"], seed=tcfg["seed"])
     idata, norm, test_metrics = _fit_and_eval(
         model, train_df, test_df if len(test_df) else None, features, target, sampler,
-        censoring, detection=detection, nd_train=nd_used, indicators=indicators)
+        censoring, detection=detection, nd_train=nd_used, indicators=indicators,
+        interactions=interactions)
     diagnostics = model.diagnostics(idata)
 
     detection_info = {**detection}
@@ -334,7 +363,7 @@ def run_train(config_path: str, model_name: str, out_dir: str | None = None,
     predictable = df[features].notna().all(axis=1) & thick_enough
     pred_df = df[predictable]
     mu_mean, mu_std, pred_std = model.predict(
-        idata, _design_matrix(pred_df, features, norm, indicators),
+        idata, _design_matrix(pred_df, features, norm, indicators, interactions),
         batch_size=tcfg["predict_batch_size"])
     full = {name: np.full(len(df), np.nan) for name in ("pred_mean", "pred_std_mu", "pred_std")}
     full["pred_mean"][predictable.to_numpy()] = invert_normalizer(mu_mean, norm[target])
@@ -349,7 +378,8 @@ def run_train(config_path: str, model_name: str, out_dir: str | None = None,
     write_predictions_zarr(df, layers, split_manifest["geometry"], zarr_path)
 
     # Self-describing posterior: normalizer + features ride along as attrs.
-    idata.attrs["features"] = json.dumps([*features, *indicators])
+    idata.attrs["features"] = json.dumps(
+        [*features, *indicators, *interaction_names(features, interactions)])
     idata.attrs["normalizer"] = json.dumps(norm)
     idata.attrs["target"] = target
     posterior_path = run_dir / "posterior.nc"
@@ -360,6 +390,7 @@ def run_train(config_path: str, model_name: str, out_dir: str | None = None,
         "split_run_id": split_manifest["run_id"],
         "features": features,
         "indicators": list(indicators),
+        "interactions": list(interactions),
         "folds": fold_metrics,
         "pooled_cv": pooled_cv,
         "test": test_metrics,

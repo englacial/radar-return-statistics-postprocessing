@@ -1,37 +1,98 @@
 ## The statistical model
 
-We model RSSNR using a Bayesian model that reflects the basic physics in its structure. Note that this model is slightly different from Schroeder et al., 2021. In that work, we chose a fully linear model for simplicity. Here we adopt a physics-informed model that includes (learned) attenuation rate and basal reflectivity values. We strongly caution against over-interpretation of these two values. This model is not intended to estimate attenuation rate or basal reflectivity independently from the other.
+We model RSSNR using a Bayesian model that reflects the basic physics in its structure. Note that this model is slightly different from Schroeder et al., 2021. In that work, we chose a fully linear model for simplicity. Here we adopt a physics-inspired model that includes (learned) attenuation rate and basal reflectivity values. We strongly caution against over-interpretation of these two values. This model is not intended to estimate attenuation rate or basal reflectivity independently from the other.
 
-All inputs are converted to z-scores.
+All continuous inputs and the target are converted to z-scores; the 0/1 indicators
+enter un-scaled. So $\mu_i$ and $\sigma$ below are dimensionless unless stated
+otherwise.
 
-```
-RSSNR = atten_rate · thickness − refl                   (dB, normalized)
+### Structure
 
-atten_rate = α_a + β_a · [T_air, speed, GHF, greenland, floating]
-refl       = α_r + β_r · [T_air, speed, GHF, greenland, floating]
+For each grid point $i$, RSSNR is modelled as:
 
-observed RSSNR ~ Normal(RSSNR*, σ)
-```
+$$
+\mu_i = a_i H_i - r_i
+$$
 
-`greenland` and `floating` are 0/1 indicators appended un-scaled. `floating` is determined from BedMachine mask value 3.
+Where $H_i$ is the ice thickness, $a_i$ can be interpreted as an attenuation rate, and $r_i$ can be interpreted as a basal reflectivity. $a_i$ and $r_i$ are modelled as linear functions of covariates $\mathbf{x}_i = [\,T_{\text{air}},\ \text{speed},\ \text{GHF}\,]_i$, indicators $g_i$ (Greenland) and $f_i$ (floating).
 
-Priors are Normal(0, 1) on every standardized coefficient and HalfNormal(1) on σ.
 
-Two observation-side layers handle the missingness honestly, adding just two more parameters:
+$$\mathbf{c}_i = \bigl[\, \mathbf{x}_i,\ g_i,\ f_i,\ g_i\mathbf{x}_i \,\bigr]$$
 
-**1. Tobit censoring for saturated picks.** When a pick's bed power sits within 10 dB of the at-depth noise floor, its likelihood term becomes `P(RSSNR ≥ observed)` instead of a density — the observation is used as the lower bound it truly is.
+$$
+a_i = \alpha_a + \boldsymbol{\beta}_a^{\top}\mathbf{c}_i
+\qquad
+r_i = \alpha_r + \boldsymbol{\beta}_r^{\top}\mathbf{c}_i
+$$
 
-**2. A learned detection threshold for non-detections.** A bed pick happens when the echo clears the local noise floor by about **θ** dB, give or take a picker softness **τ**:
+Note that the $g_i\mathbf{x}_i$ term in $\mathbf{c}_i$ gives Greenland its own
+covariate slopes (see [why the interaction model](interactions.md)).
 
-```
-P(pick | RSSNR) = Φ((C − RSSNR − θ) / τ)
-```
+Inputs are normalized from the training set. The model has the following priors in standardized space:
 
-where `C` is the trace's measured detectability ceiling (surface power, geometry, and the pick-independent at-depth noise floor). Picked points carry that selection factor; non-detections contribute the closed-form marginal `P(no pick) = Φ((μ − (C − θ)) / sqrt(τ² + σ²))` (with σ expressed in dB).
+$$
+\alpha_\bullet,\ \boldsymbol{\beta}_\bullet \sim \mathcal{N}(0,1)
+$$
+$$
+\sigma \sim \text{HalfNormal}(1)
+$$
 
-Note that a gap only counts as a non-detection if the radar window at the expected bed depth is statistically indistinguishable from noise (window peak − median, δ < 8 dB). This is intended to exclude cases where clutter, not the noise floor, limits detectability. The RSSNR model is not well-suited to determining clutter budgets, so we explicitly try to avoid estimating this case.
+### Observation model
 
-In total, there are 15 learned parameters, all with physically interpretable meaning. (Though we discourage over-interpretation of the model results. This is an engineering tool, not a scientific data product to determine properties of the ice sheets.)
+The training set includes both missing picks (where the SNR may have been too low for the instrument to detect the basal peak) and borderline picks where the estimated basal power may be inaccurate. To account for this, we layer in an observation model relating $\mu_i$ to the observed RSSNR $y_i$.
+
+Before selection, RSSNR is Gaussian about $\mu_i$:
+
+$$y_i \;\sim\; \mathcal{N}(\mu_i,\ \sigma^2)$$
+
+The two layers below modify that density rather than replacing it — a picked trace
+contributes this density *times* the selection factor, so its distribution given a
+pick is skewed, not Gaussian.
+
+**Tobit censoring for saturated picks:** When a pick's bed power sits within
+10 dB of the at-depth noise floor, the observation is only a lower bound, and its likelihood term becomes the survival function:
+
+$$\mathcal{L}_i = \Pr(y \ge y_i) = 1 - \Phi\!\left(\frac{y_i - \mu_i}{\sigma}\right)$$
+
+**Learned detection threshold for missing picks:** $C_i$ is the trace's
+detectability ceiling — the RSSNR it would have recorded had the bed peak exactly
+equalled the noise floor, and so the most demanding target that trace could still
+have resolved. It is computed per trace from measurements, not fitted:
+
+$$C_i = P^{\text{surf}}_i - P^{\text{noise}}_i
+        + 20\log_{10}\!\left(\frac{r_i}{r_i + H_i/\sqrt{\varepsilon}}\right)
+\qquad r_i = \tfrac{1}{2} c\, t^{\text{surf}}_i$$
+
+with $P^{\text{surf}}$ the surface return power, $P^{\text{noise}}$ the
+pick-independent at-depth noise floor, $r_i$ the range to the surface, and
+$\varepsilon$ the permittivity of ice — the same geometric-spreading correction
+the RSSNR definition itself uses.
+
+A bed pick happens when the required SNR sits at least about $\theta$ dB *below*
+that ceiling, which is the same as saying the bed echo clears the local noise floor
+by about $\theta$ dB, with picker softness $\tau$:
+
+$$\Pr(\text{pick} \mid y_i) = \Phi\!\left(\frac{C_i - y_i - \theta}{\tau}\right)$$
+
+Picked points carry that factor; a missing pick contributes the closed-form
+marginal over the unobserved $y$:
+
+$$\Pr(\text{no pick}) = \Phi\!\left(\frac{\mu_i - (C_i - \theta)}{\sqrt{\tau^2 + \sigma_{\text{dB}}^2}}\right)$$
+
+Both detection terms are evaluated in dB rather than in z-space, since $C_i$,
+$\theta$ and $\tau$ are all dB quantities — hence $\mu_i$ un-normalized and
+$\sigma_{\text{dB}} = \sigma\,\sigma_{\text{target}}$.
+
+Together the layers give the likelihood over both the values and the detection
+pattern,
+
+$$\prod_{\text{picked}} p(y_i)\,\Pr(\text{pick} \mid y_i)
+  \;\times\; \prod_{\text{missing}} \Pr(\text{no pick})$$
+
+which is why no $\Pr(\text{pick})$ normalizing term appears.
+
+A gap in bed picks is only counted as missing if the radar window at the expected bed depth is statistically indistinguishable from noise (window peak − median, $\delta < 8$ dB).
+This is designed to exclude cases where clutter, not the noise floor, limits detectability.
 
 ## Fitting
 
@@ -70,17 +131,17 @@ The headline accuracy and calibration numbers:
 
 | quantity | value |
 |---|---|
-| CV RMSE (5-fold, spatially blocked) | 14.11 dB (fold range 12.87–14.93) |
+| CV RMSE (5-fold, spatially blocked) | 13.02 dB (fold range 11.91–14.38) |
 | CV 1σ coverage | 0.68 |
-| Held-out test RMSE | 13.83 dB (n = 1,433 + 90 censored) |
-| Held-out test 1σ coverage | 0.70 |
-| Fully-linear baseline (same layers) | CV 14.40 dB / test 14.23 dB |
-| Sampler diagnostics | 0 divergences, R̂ ≤ 1.005 |
+| Held-out test RMSE | 12.67 dB (n = 1,433 + 90 censored) |
+| Held-out test 1σ coverage | 0.72 |
+| Fully-linear baseline (same layers) | CV 13.92 dB / test 13.95 dB |
+| Sampler diagnostics | 0 divergences, R̂ ≤ 1.007 |
 
-Posterior distributions of all 15 learned parameters, converted to physical units (the z-score normalization is an invertible affine transform, and the normalizer constants are stored in `posterior.nc`, so this conversion is exact). Attenuation-side parameters become two-way dB/km via σ_target/σ_thickness; reflectivity-side parameters become dB contributions to RSSNR (sign-flipped for the −refl convention); covariate effects are fully per-unit (e.g. dB/km/K, dB/km/(mW/m²)); θ, τ, and σ are natively in dB. Intercept-like values are referenced to the mean covariate conditions of the training set.
+Posterior distributions of all 21 learned parameters, converted to physical units (the z-score normalization is an invertible affine transform, and the normalizer constants are stored in `posterior.nc`, so this conversion is exact). Attenuation-side parameters become two-way dB/km via σ_target/σ_thickness; reflectivity-side parameters become dB contributions to RSSNR (sign-flipped for the −refl convention); covariate effects are fully per-unit (e.g. dB/km/K, dB/km/(mW/m²)); θ, τ, and σ are natively in dB. Intercept-like values are referenced to the mean covariate conditions of the training set.
 
 ![Posterior distributions in physical units](figures/posterior_physical.png)
-*Posteriors in physical units, with the headline CV and held-out test RMSE. The 14.4 dB/km one-way (28.9 two-way) depth-averaged attenuation rate at mean conditions falls in the physically expected range. Posterior widths are small because n ≈ 21k; the meaningful uncertainty is the 14 dB residual σ. The two 0/1 indicators are reported as the step between their states.*
+*Posteriors in physical units, with the headline CV and held-out test RMSE. The 11.6 dB/km one-way (23.3 two-way) depth-averaged attenuation rate at mean conditions falls in the physically expected range. Posterior widths are small because n ≈ 21k; the meaningful uncertainty is the 13 dB residual σ. The 0/1 indicators are reported as the step between their states; the interaction panels are Greenland's *offset* from the Antarctic slope, not an absolute slope.*
 
 The distribution of observed and posterior predicted RSSNR values are shown below by ice sheet:
 

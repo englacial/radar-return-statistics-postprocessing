@@ -43,7 +43,7 @@ The training set includes both missing picks (where the SNR may have been too lo
 
 Before selection, RSSNR is Gaussian about $\mu_i$:
 
-$$y_i \;\sim\; \mathcal{N}(\mu_i,\ \sigma^2)$$
+$$y_i \sim \mathcal{N}(\mu_i,\ \sigma^2)$$
 
 The two layers below modify that density rather than replacing it — a picked trace
 contributes this density *times* the selection factor, so its distribution given a

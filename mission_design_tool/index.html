@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Ice Sounder Mission Design Tool</title>
+<title>Radar Sounder Link Budget Design Tool</title>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -31,7 +31,7 @@
 <!-- ───────────────────────── 1. what this is ───────────────────────── -->
 <section class="intro" id="sec-intro">
   <p class="lede">
-    This tool is designed to built intuition about nadir-pointing ice-penetrating radar 
+    This tool is designed to build intuition about nadir-pointing ice-penetrating radar 
     sounder instruments on novel platforms. Start from a preset below or enter custom
     system parameters to estimate the expected signal-to-noise ratio (SNR) for a radar 
     sounder imaging the basal interface (bedrock topography or other sub-ice interface)
@@ -39,7 +39,7 @@
   </p>
 
   <p>
-    The most difficult part of building an radar sounder link budget is estimating what
+    The most difficult part of building a radar sounder link budget is estimating what
     happens within the ice. Both attenuation within ice and reflectivity at the ice-bed 
     interface can vary dramatically. This tool uses a 
     <a href="https://github.com/englacial/radar-return-statistics-postprocessing/blob/main/docs/3_model.md" target="_blank">statistical model</a>
@@ -50,16 +50,23 @@
 
   <p>
     In short, RSSNR provides the expected difference between surface power return and
-    basal power return, after correcting for geoemetric spreading. Once we have RSSNR,
+    basal power return, after correcting for geometric spreading. Once we have RSSNR,
     we can calculate the expected bed SNR using only properties of the instrument and
-    the platform its on (aircraft, UAV, satellite, etc). That's what this tool does.
+    its platform (aircraft, UAV, satellite, etc) plus the expected ice thickness.
   </p>
 
-  <pre class="eq">SNR<sub>bed</sub>  =  SNR<sub>surface</sub>  +  G<sub>pulse-comp</sub>  +  Δspreading(<i>d</i>)  −  RSSNR</pre>
+  <p>
+    This tool calculates <code class="eq">SNR<sub>surface</sub></code> using a standard
+    radar sounder link budget and then applies the statistical model of RSSNR to estimate 
+    basal SNR according to:
+  </p>
+
+  <pre class="eq">SNR<sub>bed</sub>  =  SNR<sub>surface</sub>  +  Δspreading(<i>d</i>)  −  RSSNR</pre>
 
   <p>
     We treat the surface SNR as fixed (a loose approximation) and only the last two terms
-    vary spatially, though ice thickness (derived from BedMachine) and the fitted RSSNR.
+    vary spatially, through ice thickness (<code class="eq"><i>d</i></code>, derived from
+    BedMachine) and the fitted RSSNR.
   </p>
 
   <p>
@@ -75,9 +82,9 @@
         add coherently over the first Fresnel zone.</li>
       <li><b>Azimuth gain is evaluated at the surface</b> Fresnel zone, which is mildly
         conservative (especially at low altitudes).</li>
-      <li><b>RSSNR includes no estimate of frequency-dependence</b> which may bias
+      <li><b>RSSNR includes no estimate of frequency-dependence</b>, which may bias
         results when the center frequency is far from the frequency of airborne radar 
-        sounders represented in OPR. </li>
+        sounders represented in OPR.</li>
       <li><b>Pulse-compression gain cancels inside RSSNR</b> — it applies to the surface and
         bed returns alike — so it is added back once here, for the bed.</li>
       <li><b>The noise floor is sky-dominated at VHF.</b> Antenna temperature defaults to the

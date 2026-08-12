@@ -148,15 +148,27 @@ h3 { font-size: 14px; margin: 0 0 10px; }
 .intro p { margin: 0 0 14px; }
 .lede { font-size: 17px; line-height: 1.5; }
 .note { color: var(--muted); font-size: 13.5px; }
+/* Equations: pre.eq is the display block, code.eq the inline form. `code` is
+   inline by default — a `pre` used mid-sentence is block-level and makes the
+   parser auto-close the surrounding `p`. */
+pre.eq, code.eq {
+  background: var(--eng-bg-accent); color: var(--eng-accent-2);
+  border: 1px solid var(--line); font-family: var(--mono);
+}
 pre.eq {
-  font: 15px/1.6 var(--mono); background: var(--eng-bg-accent); color: var(--eng-accent-2);
-  border: 1px solid var(--line); border-radius: 8px;
+  font-size: 15px; line-height: 1.6; border-radius: 8px;
   padding: 14px 16px; margin: 0 0 14px; overflow-x: auto;
 }
-pre.eq i { color: var(--eng-primary); font-style: italic; }
+code.eq {
+  /* em-relative so it tracks whatever text it sits in; line-height 1 keeps the
+     border box from inflating the paragraph's leading. */
+  font-size: 0.95em; line-height: 1; border-radius: 4px;
+  padding: 1px 5px; white-space: nowrap;
+}
+pre.eq i, code.eq i { color: var(--eng-primary); font-style: italic; }
 @media (prefers-color-scheme: dark) {
-  pre.eq { background: var(--card); color: var(--ink); border-color: var(--line); }
-  pre.eq i { color: var(--accent); }
+  pre.eq, code.eq { background: var(--card); color: var(--ink); border-color: var(--line); }
+  pre.eq i, code.eq i { color: var(--accent); }
 }
 .assumptions { border-top: 1px solid var(--line); padding-top: 10px; font-size: 13.5px; }
 .assumptions summary { cursor: pointer; color: var(--muted); font-weight: 500; }

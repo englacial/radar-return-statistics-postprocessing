@@ -2,6 +2,8 @@ Use uv for dependency management and `uv run` to run anything.
 
 Do not edit anything outside of this directory.
 
+When long tasks are required, use subagents to perform them.
+
 This repo (`radar-return-statistics-postprocessing`) is the consumer side of the upstream
 `radar-return-statistics`.
 It reads a *pinned snapshot* of the upstream `radar-return-statistics` icechunk

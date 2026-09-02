@@ -26,9 +26,9 @@ MODEL = "atten_refl"
 COV_UNITS = {"era5_t2m_mean_K": "K", "surface_v_m_yr": "m/yr", "ghf_mW_m2": "mW/m²"}
 
 
-def main():
-    idata = az.from_netcdf(f"outputs/model/{MODEL}/posterior.nc")
-    metrics = json.load(open(f"outputs/model/{MODEL}/metrics.json"))
+def physical_panels(idata):
+    """(label, draws, unit) per learned parameter of an atten_refl posterior, in
+    physical units (see module docstring for the conversions)."""
     norm = json.loads(idata.attrs["normalizer"])
     sy = norm["required_surface_snr_dB"]["std"]
     st = norm["bedmachine_thickness_m"]["std"]
@@ -86,6 +86,13 @@ def main():
     panels.append(("σ — residual scatter", post["sigma"].values * sy, "dB"))
     panels.append(("θ — detection threshold", post["theta"].values, "dB"))
     panels.append(("τ — picker softness", post["tau"].values, "dB"))
+    return panels
+
+
+def main():
+    idata = az.from_netcdf(f"outputs/model/{MODEL}/posterior.nc")
+    metrics = json.load(open(f"outputs/model/{MODEL}/metrics.json"))
+    panels = physical_panels(idata)
 
     ncol = 5
     nrow = -(-(len(panels) + 1) // ncol)  # +1 leaves room for the accuracy panel

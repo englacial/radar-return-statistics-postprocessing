@@ -9,9 +9,13 @@ within-season repeatability (matches restricted to a different frame).
 Rendered as one annotated matrix per sheet: cell colour = median (PRGn
 diverging, centred at 0), gray = fewer than MIN_PAIRS pairs.
 
-Usage: uv run python scripts/season_crossover_matrix.py
+Usage: uv run python scripts/season_crossover_matrix.py [--calibration-qc]
+  --calibration-qc applies config/model.yaml's split.calibration_qc rules to the
+  traces first (output suffix _qc), for a model-free before/after check of
+  inter-season agreement.
 """
 
+import argparse
 from pathlib import Path
 
 import matplotlib
@@ -23,6 +27,9 @@ from scipy.spatial import cKDTree
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 
+from radar_postproc.config import load_model_config  # noqa: E402
+from radar_postproc.split import apply_calibration_qc  # noqa: E402
+
 from plot_style import INK  # noqa: E402
 
 RADIUS_M = 500.0
@@ -33,8 +40,11 @@ SHEETS = {"antarctica": ("outputs/antarctica/antarctica.parquet", "EPSG:3031"),
           "greenland": ("outputs/greenland/greenland.parquet", "EPSG:3413")}
 
 
-def load_sheet(path: str, crs: str) -> pd.DataFrame:
+def load_sheet(path: str, crs: str, qc: dict | None = None) -> pd.DataFrame:
     df = pd.read_parquet(path)
+    if qc is not None:
+        df, counts = apply_calibration_qc(df, qc)
+        print(f"{path}: calibration QC dropped {counts['any']}/{counts['n_before']} traces")
     noise = df.get("post_bed_noise_interp_dB")
     if noise is None or noise.isna().all():
         noise = df["post_bed_noise_dB"]
@@ -71,9 +81,18 @@ def pair_deltas(a: pd.DataFrame, b: pd.DataFrame, same_season: bool) -> np.ndarr
 
 
 def main():
-    out_dir = Path("outputs/model/analysis")
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--calibration-qc", action="store_true")
+    ap.add_argument("--out-dir", default="outputs/model/analysis")
+    args = ap.parse_args()
+    qc = None
+    if args.calibration_qc:
+        qc = {**load_model_config("config/model.yaml")["split"]["calibration_qc"], "enabled": True}
+    suffix = "_qc" if qc else ""
+    out_dir = Path(args.out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
     for sheet, (path, crs) in SHEETS.items():
-        df = load_sheet(path, crs)
+        df = load_sheet(path, crs, qc)
         seasons = sorted(df["collection"].unique())
         n = len(seasons)
         med = np.full((n, n), np.nan)
@@ -107,17 +126,23 @@ def main():
         short = [s.split("_", 1)[0] + " " + s.split("_")[-1] for s in seasons]
         ax.set_xticks(range(n), short, rotation=45, ha="right", fontsize=9)
         ax.set_yticks(range(n), short, fontsize=9)
-        ax.set_title(f"{sheet}: RSSNR at season crossovers — median(row − col) ± sd [dB]\n"
+        ax.set_title(f"{sheet}: RSSNR at season crossovers{' (calibration QC applied)' if qc else ''}"
+                     " — median(row − col) ± sd [dB]\n"
                      f"pairs within {RADIUS_M:.0f} m, both margins > {MIN_MARGIN_DB:.0f} dB, "
                      f"min {MIN_PAIRS} pairs; diagonal = within-season (cross-frame)",
                      color=INK, fontsize=11)
         fig.colorbar(im, ax=ax, shrink=0.8, label="median Δ RSSNR [dB]")
         fig.tight_layout()
-        out = out_dir / f"season_crossover_matrix_{sheet}.png"
+        out = out_dir / f"season_crossover_matrix_{sheet}{suffix}.png"
         fig.savefig(out, dpi=140, bbox_inches="tight")
         plt.close(fig)
         total_pairs = int(cnt[np.triu_indices(n)].sum())
         print(f"{sheet}: {n} seasons, {total_pairs} pairs total -> {out}")
+        # Long-format table of the upper triangle (incl. diagonal) for numeric summaries.
+        pd.DataFrame([{"row": seasons[i], "col": seasons[j], "median_dB": med[i, j],
+                       "sd_dB": sd[i, j], "n_pairs": int(cnt[i, j])}
+                      for i in range(n) for j in range(i, n)]
+                     ).to_csv(out_dir / f"season_crossover_pairs_{sheet}{suffix}.csv", index=False)
 
 
 if __name__ == "__main__":

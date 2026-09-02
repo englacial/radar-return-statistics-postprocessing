@@ -102,9 +102,11 @@ def main():
                for c in C_INST.values()]
     ax.legend(handles, C_INST.keys(), frameon=False, fontsize=9)
     excl = config["split"]["exclude_collections"]
+    qc_on = config["split"]["calibration_qc"]["enabled"]
     ax.set_title(f"Out-of-fold residuals by season (uncensored points; {MODEL}, "
                  f"indicators={list(indicators)}"
-                 + (f"; excluded: {', '.join(excl)}" if excl else "") + ")",
+                 + (f"; excluded: {', '.join(excl)}" if excl else "")
+                 + ("; calibration QC on" if qc_on else "") + ")",
                  color=INK, fontsize=11)
     fig.tight_layout()
     out = "outputs/model/analysis/residuals_by_season.png"

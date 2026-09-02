@@ -7,7 +7,7 @@ store:
 
 icechunk:
   branch: "main"
-  snapshot_id: "GEAMAHQ7BRVPG9SQPK20"  # pinned 2026-07-31: reprocessed with missing bed picks + new noise metrics
+  snapshot_id: "JWDABR34HPM816P70FD0"  # pinned 2026-09-01: radiometric calibration fields (method 0.4.0), no science values changed
 
 extract:
   qc_only: true

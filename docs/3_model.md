@@ -127,21 +127,21 @@ uv run python scripts/posterior_physical.py
 cp outputs/model/analysis/posterior_physical.png docs/figures/
 ```
 
-The headline accuracy and calibration numbers:
+The headline accuracy and calibration numbers (trained 2026-09-02 with the radiometric calibration QC filter described in [Input data](2_input_data.md#radiometric-calibration-qc); 17,322 training grid points, 1,171 of them censored, plus 187 non-detections):
 
 | quantity | value |
 |---|---|
-| CV RMSE (5-fold, spatially blocked) | 13.02 dB (fold range 11.91–14.38) |
+| CV RMSE (5-fold, spatially blocked) | 12.87 dB (fold range 11.82–14.32) |
 | CV 1σ coverage | 0.68 |
-| Held-out test RMSE | 12.67 dB (n = 1,433 + 90 censored) |
-| Held-out test 1σ coverage | 0.72 |
-| Fully-linear baseline (same layers) | CV 13.92 dB / test 13.95 dB |
-| Sampler diagnostics | 0 divergences, R̂ ≤ 1.007 |
+| Held-out test RMSE | 12.72 dB (n = 1,330 + 88 censored) |
+| Held-out test 1σ coverage | 0.71 |
+| Fully-linear baseline (same layers) | CV 13.80 dB / test 13.98 dB |
+| Sampler diagnostics | 0 divergences, R̂ ≤ 1.005 |
 
 Posterior distributions of all 21 learned parameters, converted to physical units (the z-score normalization is an invertible affine transform, and the normalizer constants are stored in `posterior.nc`, so this conversion is exact). Attenuation-side parameters become two-way dB/km via σ_target/σ_thickness; reflectivity-side parameters become dB contributions to RSSNR (sign-flipped for the −refl convention); covariate effects are fully per-unit (e.g. dB/km/K, dB/km/(mW/m²)); θ, τ, and σ are natively in dB. Intercept-like values are referenced to the mean covariate conditions of the training set.
 
 ![Posterior distributions in physical units](figures/posterior_physical.png)
-*Posteriors in physical units, with the headline CV and held-out test RMSE. The 11.6 dB/km one-way (23.3 two-way) depth-averaged attenuation rate at mean conditions falls in the physically expected range. Posterior widths are small because n ≈ 21k; the meaningful uncertainty is the 13 dB residual σ. The 0/1 indicators are reported as the step between their states; the interaction panels are Greenland's *offset* from the Antarctic slope, not an absolute slope.*
+*Posteriors in physical units, with the headline CV and held-out test RMSE. The 11.6 dB/km one-way (23.2 two-way) depth-averaged attenuation rate at mean conditions falls in the physically expected range. Posterior widths are small because n ≈ 17k; the meaningful uncertainty is the 12.7 dB residual σ. The 0/1 indicators are reported as the step between their states; the interaction panels are Greenland's *offset* from the Antarctic slope, not an absolute slope.*
 
 The distribution of observed and posterior predicted RSSNR values are shown below by ice sheet:
 
@@ -166,3 +166,17 @@ Maps of the mean and 80th percentile predictions for both ice sheets are shown b
 
 ![80th percentile map](figures/map_q80.png)
 *The 80th percentile of the posterior predictive (recommended for instrument design). Note the different colorscale from the prior set of plots.*
+
+### Effect of the radiometric calibration QC
+
+The model above is the first trained after the upstream stores shipped per-trace seam-step and surface-saturation diagnostics, with the suggested filter applied (`split.calibration_qc`). The filter drops about 14% of Antarctic and 13% of Greenland traces but leaves the fit essentially unchanged: scored on the same held-out points, the pre- and post-QC posteriors differ by 0.03 dB in RMSE, every parameter stays within about two posterior standard deviations of its previous value, and the predicted maps move by less than 1 dB almost everywhere.
+
+![Prediction change from the calibration QC](figures/calibration_qc_prediction_difference.png)
+*Change in posterior-mean required surface SNR from adopting the calibration QC filter (new − previous model). Median +0.01 dB (Antarctica) and +0.07 dB (Greenland); 5th–95th percentile within ±0.6 dB.*
+
+The season-level offsets visible in the crossover matrices and in the out-of-fold residuals by season are not touched by a trace-level filter and remain the largest known calibration issue. To reproduce the comparison (requires a copy of the previous `outputs/model` and augment parquets at `outputs/baseline_20260807/`):
+
+```
+uv run python scripts/qc_filter_comparison.py
+cp outputs/qc_filter/prediction_difference.png docs/figures/calibration_qc_prediction_difference.png
+```

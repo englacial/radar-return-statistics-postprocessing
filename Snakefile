@@ -13,7 +13,6 @@
 # the filenames, so every rule can target a static path directly.
 
 STORE = config.get("store", "ase")
-CONFIG_PATH = config.get("config_path", f"config/{STORE}.yaml")
 OUT_DIR = config.get("out_dir", "outputs")
 
 # Cross-store modeling pipeline (grid -> split -> train -> benchmark), driven by
@@ -44,6 +43,10 @@ rule all:
 
 
 rule run:
+    # The store config is an input so re-pinning icechunk.snapshot_id (or any
+    # other augment change) re-runs the extraction without --forcerun.
+    input:
+        config=lambda w: config.get("config_path", f"config/{w.store}.yaml"),
     output:
         parquet=f"{OUT_DIR}/{{store}}/{{store}}.parquet",
         manifest=f"{OUT_DIR}/{{store}}/{{store}}.manifest.json",
@@ -52,10 +55,7 @@ rule run:
 
         # Derive the config from the wildcard (not the module-level CONFIG_PATH)
         # so cross-store DAGs (e.g. model_all) build the right store.
-        run_pipeline(
-            config.get("config_path", f"config/{wildcards.store}.yaml"),
-            out_dir=OUT_DIR,
-        )
+        run_pipeline(input.config, out_dir=OUT_DIR)
 
 
 rule csv:
@@ -106,8 +106,11 @@ rule grid:
 
 rule split:
     # Attach the radar target to grid points, assign blocking cells + folds,
-    # emit helper maps for hand-picking test cells.
+    # emit helper maps for hand-picking test cells. model.yaml is an input so
+    # split/train config edits re-run these stages (grid deliberately not: it
+    # is slow and only its own section matters).
     input:
+        config=MODEL_CONFIG_PATH,
         grid=f"{OUT_DIR}/model/grid.parquet",
         stores=expand(f"{OUT_DIR}/{{s}}/{{s}}.parquet", s=MODEL_STORES),
     output:
@@ -122,6 +125,7 @@ rule split:
 
 rule train:
     input:
+        MODEL_CONFIG_PATH,
         f"{OUT_DIR}/model/split.parquet",
     output:
         metrics=f"{OUT_DIR}/model/{{model}}/metrics.json",

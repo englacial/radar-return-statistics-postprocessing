@@ -126,7 +126,8 @@ def compute_ceiling(surface_power_dB, surface_twtt, noise_dB, thickness_m,
 _OBS_COLS = ["latitude", "longitude", "collection", "bed_power_dB", "post_bed_noise_dB",
              "post_bed_noise_interp_dB", "post_bed_peak_interp_dB",
              "surface_power_dB", "surface_twtt",
-             "bed_pick_available", "bed_pick_attempted"]
+             "bed_pick_available", "bed_pick_attempted",
+             "img_comb_offset_dB", "surface_source_image_index", "surface_ceiling_margin_dB"]
 
 _UTIG_SUFFIXES = ("_BaslerJKB", "_BaslerMKB")
 
@@ -138,8 +139,45 @@ def institution_of(collection) -> str | None:
     return "UTIG" if collection.endswith(_UTIG_SUFFIXES) else "CReSIS"
 
 
+def calibration_qc_flags(df: pd.DataFrame, qc: dict) -> pd.DataFrame:
+    """Per-rule rejection flags from the upstream radiometric calibration fields.
+
+    Columns (True = reject): seam (image-combine step |img_comb_offset_dB| >=
+    max_seam_offset_dB; NaN rejected only with drop_unmeasured_seam), img2
+    (surface sampled from a higher-gain image, index >= 2 — likely saturated,
+    season-dependent low bias; -1/NaN unknown passes), saturated
+    (surface_ceiling_margin_dB < min_ceiling_margin_dB; NaN = no credible season
+    ceiling, passes). Missing columns (older stores) reject nothing.
+    """
+    n = len(df)
+    nan = pd.Series(np.nan, index=df.index)
+    seam = df.get("img_comb_offset_dB", nan).astype("float64")
+    src = df.get("surface_source_image_index", nan).astype("float64")
+    margin = df.get("surface_ceiling_margin_dB", nan).astype("float64")
+    flags = pd.DataFrame(index=df.index)
+    flags["seam"] = (seam.abs() >= qc["max_seam_offset_dB"]).to_numpy()
+    if qc["drop_unmeasured_seam"]:
+        flags["seam"] |= seam.isna().to_numpy()
+    flags["img2"] = (src >= 2).to_numpy() if qc["require_img1_surface"] else np.zeros(n, bool)
+    flags["saturated"] = (margin < qc["min_ceiling_margin_dB"]).to_numpy()
+    return flags
+
+
+def apply_calibration_qc(obs: pd.DataFrame, qc: dict) -> tuple[pd.DataFrame, dict]:
+    """Drop traces failing any calibration_qc rule; return (kept, counts by rule)."""
+    if not qc["enabled"]:
+        return obs, {}
+    flags = calibration_qc_flags(obs, qc)
+    reject = flags.any(axis=1).to_numpy()
+    counts = {k: int(v) for k, v in flags.sum().items()}
+    counts["any"] = int(reject.sum())
+    counts["n_before"] = len(obs)
+    return obs[~reject].reset_index(drop=True), counts
+
+
 def _load_observations(sheet: str, stores: list[str], target: str, out_dir: Path,
-                       exclude_collections: tuple = ()) -> pd.DataFrame:
+                       exclude_collections: tuple = (),
+                       calibration_qc: dict | None = None) -> tuple[pd.DataFrame, dict]:
     """Pooled attempted radar traces for a sheet, in its native projected CRS.
 
     Rows are picked observations OR non-detections (attempted, no bed pick —
@@ -170,6 +208,14 @@ def _load_observations(sheet: str, stores: list[str], target: str, out_dir: Path
         obs = obs[~obs["collection"].isin(list(exclude_collections))].reset_index(drop=True)
         logger.info("Split %s: excluded %d traces from collections %s",
                     sheet, n0 - len(obs), list(exclude_collections))
+    qc_counts = {}
+    if calibration_qc is not None:
+        obs, qc_counts = apply_calibration_qc(obs, calibration_qc)
+        if qc_counts:
+            logger.info("Split %s: calibration QC dropped %d/%d traces (seam %d, img2 "
+                        "surface %d, saturated %d)", sheet, qc_counts["any"],
+                        qc_counts["n_before"], qc_counts["seam"], qc_counts["img2"],
+                        qc_counts["saturated"])
 
     # Old stores carry no pick flags: rows with a target are picked observations.
     avail = obs["bed_pick_available"].astype("float64")
@@ -185,7 +231,7 @@ def _load_observations(sheet: str, stores: list[str], target: str, out_dir: Path
     obs["delta_dB"] = obs["post_bed_peak_interp_dB"] - obs["post_bed_noise_interp_dB"]
     tx = Transformer.from_crs("EPSG:4326", REGION_CRS[sheet], always_xy=True)
     obs["x"], obs["y"] = tx.transform(obs["longitude"].to_numpy(), obs["latitude"].to_numpy())
-    return obs
+    return obs, qc_counts
 
 
 def _cells_summary(df: pd.DataFrame, target: str, cell_size_m: float) -> pd.DataFrame:
@@ -269,11 +315,14 @@ def run_split(config_path: str, out_dir: str | None = None, repo_dir: str = ".")
     ceiling = np.full(len(df), np.nan)
     collection = np.full(len(df), None, dtype=object)
     institution = np.full(len(df), None, dtype=object)
+    qc_summary: dict[str, dict] = {}
     for sheet, stores in config["inputs"].items():
         for store in stores:
             augment_run_ids[store] = read_run_id(out_dir / store / f"{store}.parquet")
-        obs = _load_observations(sheet, stores, target, out_dir,
-                                 exclude_collections=tuple(split_cfg["exclude_collections"]))
+        obs, qc_summary[sheet] = _load_observations(
+            sheet, stores, target, out_dir,
+            exclude_collections=tuple(split_cfg["exclude_collections"]),
+            calibration_qc=split_cfg["calibration_qc"])
         rows = (df["ice_sheet"] == sheet).to_numpy()
         # Nearest *attempted* trace: a grid point takes whichever attempted trace
         # is closest — a picked observation or a non-detection.
@@ -378,6 +427,7 @@ def run_split(config_path: str, out_dir: str | None = None, repo_dir: str = ".")
         folds={str(k): int(v) for k, v in fold_sizes.items()},
         n_train_points=n_train,
         n_test_points=n_test,
+        calibration_qc=qc_summary,
     )
     paths = write_stage_output(df, manifest, model_dir / "split.parquet")
     paths["cells"] = str(model_dir / "cells.csv")

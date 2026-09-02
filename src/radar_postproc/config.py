@@ -67,6 +67,12 @@ def load_config(config_path: str | Path) -> dict:
             "bed_pick_attempted",
             "qc_surface_pass",
             "qc_pass",
+            # Radiometric calibration diagnostics (upstream method 0.4.0; see
+            # docs/dataset_changelog.md there). Consumed by split.calibration_qc.
+            "img_comb_offset_dB",
+            "img_comb_pair",
+            "surface_source_image_index",
+            "surface_ceiling_margin_dB",
         ],
     )
 
@@ -118,6 +124,18 @@ def load_model_config(config_path: str | Path) -> dict:
     split.setdefault("test_cells", [])  # e.g. ["ant:-3:1"]; empty -> warning, no test set
     # Collections dropped entirely before matching (crossover-identified outliers).
     split.setdefault("exclude_collections", [])
+    # Per-trace radiometric QC from the upstream calibration fields (image-combine
+    # seam steps + surface saturation). Applied to observations AND non-detections
+    # before matching. Every rule passes where its input is NaN / unknown: the
+    # check did not run there, which is not evidence either way (dropping
+    # unmeasured seams would remove whole seasons, e.g. 93% of 2014_Greenland_P3).
+    split.setdefault("calibration_qc", {})
+    qc = split["calibration_qc"]
+    qc.setdefault("enabled", False)
+    qc.setdefault("max_seam_offset_dB", 3.0)     # drop |img_comb_offset_dB| >= this
+    qc.setdefault("drop_unmeasured_seam", False)  # also drop NaN offsets
+    qc.setdefault("require_img1_surface", True)   # drop surface_source_image_index >= 2
+    qc.setdefault("min_ceiling_margin_dB", 2.0)   # drop surface_ceiling_margin_dB < this
 
     # Bayesian model training / prediction.
     config.setdefault("train", {})

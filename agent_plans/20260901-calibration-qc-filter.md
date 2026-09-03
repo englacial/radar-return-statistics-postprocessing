@@ -4,7 +4,7 @@ Branch: `qc-calibration-filter`.
 
 ## Context
 
-Upstream `radar-return-statistics` shipped calibration method 0.4.0
+Upstream `radar-return-statistics` shipped calibration method 0.4.0 (refreshed to 0.4.1 on 2026-09-03: 2018_Antarctica_DC8's rising img2 envelope no longer counts as a ceiling, 49 Antarctic frames backfilled, variable attrs added)
 (`docs/dataset_changelog.md`, 2026-09): four per-trace diagnostics —
 `img_comb_offset_dB`, `img_comb_pair`, `surface_source_image_index`,
 `surface_ceiling_margin_dB` — plus a season-keyed `saturation` root attr. No
@@ -12,9 +12,10 @@ pre-existing values changed (verified byte-identical upstream), so a model
 retrained on the re-pinned snapshots differs from the 2026-08-07 baseline only
 through the QC filter.
 
-Stores landed (all `[calibration] saturation second pass`, 2026-09-02 00:36 UTC):
-antarctica SYAKG11X8AFFY0H9H65G, greenland JWDABR34HPM816P70FD0,
-ase WQCXS05H226PX1KGRZ2G. utig / crosssystem not updated (not model inputs).
+Stores landed 2026-09-02 00:36 UTC (0.4.0: antarctica SYAKG11X8AFFY0H9H65G,
+greenland JWDABR34HPM816P70FD0, ase WQCXS05H226PX1KGRZ2G) and were refreshed
+2026-09-03 15:51 UTC (0.4.1, the pinned ones: antarctica 087JBD7NTAE8BTBTEYSG,
+greenland ACA8WY61ZF9W6VSBA3HG, ase F6TXWSEQ9RQCD1H7MSMG). utig / crosssystem not updated (not model inputs).
 
 ## Plan
 
@@ -44,6 +45,6 @@ ase WQCXS05H226PX1KGRZ2G. utig / crosssystem not updated (not model inputs).
 ## Status
 
 - [x] 1–2 implemented + unit tests (`tests/unit/test_calibration_qc.py`).
-- [x] 3 pipeline run (2026-09-02 01:12–01:26 UTC; run_ids split afea44749ef3, atten_refl ef95a4a6fba5, linear 9b77f5fc2990)
+- [x] 3 pipeline run (2026-09-02 on 0.4.0; re-run 2026-09-03 16:13–16:27 UTC on 0.4.1 — identical posteriors; run_ids split 4ff998437f3b, atten_refl af5514ae3b72, linear c0b385764662)
 - [x] 4 comparison + assessment (`agent_notes/20260901-calibration-qc-results.md`)
 - [x] docs (`docs/2_input_data.md`); Snakefile: store + model configs are now rule inputs

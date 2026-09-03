@@ -26,7 +26,7 @@ Traces with radar-derived thickness under 100 m are dropped. (This is configured
 
 ### Radiometric calibration QC
 
-Two instrument effects can bias RSSNR at the trace level, and since 2026-09 the upstream stores ship per-trace diagnostics for both (calibration method 0.4.0; see the [dataset changelog](https://github.com/englacial/radar-return-statistics/blob/main/docs/dataset_changelog.md)):
+Two instrument effects can bias RSSNR at the trace level, and since 2026-09 the upstream stores ship per-trace diagnostics for both (calibration method 0.4.1; see the [dataset changelog](https://github.com/englacial/radar-return-statistics/blob/main/docs/dataset_changelog.md)):
 
 * **Image-combine seam steps.** The MCoRDS products stitch a low-gain image (surface) onto higher-gain images (deep ice/bed). A miscalibrated stitch puts a power step at the seam, which biases bed power relative to surface power by that step. `img_comb_offset_dB` is the residual step measured in each frame's individual images.
 * **Surface saturation.** Where the surface return clips the receiver, surface power is underestimated and RSSNR is biased low. `surface_ceiling_margin_dB` is the distance below the season's fitted clip level, and `surface_source_image_index` records whether the surface sample came from the low-gain image (1) or a higher-gain image (≥2, likely saturated with a season-dependent low bias).

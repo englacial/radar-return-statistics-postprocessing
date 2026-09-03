@@ -1,7 +1,7 @@
 {
   "model": "atten_refl",
-  "run_id": "ef95a4a6fba5",
-  "created_at": "2026-09-02T01:26:02.061991+00:00",
+  "run_id": "af5514ae3b72",
+  "created_at": "2026-09-03T16:27:20.771905+00:00",
   "stride": 1,
   "resolution_m": 5000,
   "mu_scale": 10.0,

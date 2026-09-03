@@ -42,7 +42,7 @@ split:
   test_cells: ["ant:-5:1", "ant:-3:-2", "ant:1:-3", "ant:2:-2", "ant:2:0", "grl:0:-6", "grl:1:-4", "grl:0:-2"] # pick from outputs/model/cell_maps/, e.g. ["ant:-3:1", "grl:0:-5"]
   exclude_collections: [2017_Antarctica_Basler, 2013_Greenland_P3]  # crossover-identified calibration outliers
   # Per-trace radiometric QC from the upstream calibration fields (dataset
-  # changelog 2026-09, method 0.4.0). Rules pass where their input is
+  # changelog 2026-09, method 0.4.1). Rules pass where their input is
   # unmeasured (NaN / unknown source image) — see docs/2_input_data.md.
   calibration_qc:
     enabled: true

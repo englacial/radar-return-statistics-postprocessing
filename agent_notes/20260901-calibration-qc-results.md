@@ -8,9 +8,15 @@ augment parquets) and `scripts/season_crossover_matrix.py [--calibration-qc]
 
 ## Data
 
-Re-pinned 2026-09-02 00:36 UTC snapshots (antarctica SYAKG11X8AFFY0H9H65G,
-greenland JWDABR34HPM816P70FD0, ase WQCXS05H226PX1KGRZ2G). Upstream verified
-no science values changed, so baseline vs new differs only by the filter.
+Pinned to the 2026-09-03 15:51 UTC method-0.4.1 snapshots (antarctica
+087JBD7NTAE8BTBTEYSG, greenland ACA8WY61ZF9W6VSBA3HG, ase F6TXWSEQ9RQCD1H7MSMG).
+Upstream verified no science values changed, so baseline vs new differs only
+by the filter. The 0.4.1 refresh (from the 2026-09-02 0.4.0 snapshots first
+used here) changed exactly one thing that reaches the model: 72 traces of
+2018_Antarctica_DC8 lost their at-ceiling flag when its rising img2 envelope
+stopped counting as a ceiling — all 72 were already rejected by the img2
+rule, so the split parquet is identical apart from run_ids and the model
+retrains to the same posterior (fixed seed).
 
 Share of traces entering the split stage (after the two season exclusions)
 rejected, exclusive attribution:

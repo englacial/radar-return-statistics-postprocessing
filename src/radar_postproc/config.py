@@ -67,7 +67,7 @@ def load_config(config_path: str | Path) -> dict:
             "bed_pick_attempted",
             "qc_surface_pass",
             "qc_pass",
-            # Radiometric calibration diagnostics (upstream method 0.4.0; see
+            # Radiometric calibration diagnostics (upstream method 0.4.1; see
             # docs/dataset_changelog.md there). Consumed by split.calibration_qc.
             "img_comb_offset_dB",
             "img_comb_pair",

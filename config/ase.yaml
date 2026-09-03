@@ -7,7 +7,7 @@ store:
 
 icechunk:
   branch: "main"
-  snapshot_id: "WQCXS05H226PX1KGRZ2G"  # pinned 2026-09-01: radiometric calibration fields (method 0.4.0), no science values changed
+  snapshot_id: "F6TXWSEQ9RQCD1H7MSMG"  # pinned 2026-09-03: calibration method 0.4.1 refresh, no science values changed
 
 extract:
   qc_only: true

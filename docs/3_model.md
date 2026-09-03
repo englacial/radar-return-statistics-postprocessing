@@ -127,7 +127,7 @@ uv run python scripts/posterior_physical.py
 cp outputs/model/analysis/posterior_physical.png docs/figures/
 ```
 
-The headline accuracy and calibration numbers (trained 2026-09-02 with the radiometric calibration QC filter described in [Input data](2_input_data.md#radiometric-calibration-qc); 17,322 training grid points, 1,171 of them censored, plus 187 non-detections):
+The headline accuracy and calibration numbers (trained 2026-09-03 on the method-0.4.1 calibration snapshots with the radiometric calibration QC filter described in [Input data](2_input_data.md#radiometric-calibration-qc); 17,322 training grid points, 1,171 of them censored, plus 187 non-detections):
 
 | quantity | value |
 |---|---|

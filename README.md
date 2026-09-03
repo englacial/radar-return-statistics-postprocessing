@@ -50,6 +50,12 @@ spatial split, censoring/detection settings, season exclusions):
 uv run snakemake --cores 4 --rerun-triggers=mtime -- model_all
 ```
 
+Each rule depends on a stamp of the config section its run_id hashes
+(`outputs/config_stamps/`, written by the Snakefile at parse time), so editing
+the grid section rebuilds the grid and everything after it, editing a split or
+train setting reruns only those stages, and a comment-only edit or a
+re-pinned snapshot triggers exactly the stages it affects.
+
 This builds the full-ice-sheet covariate grid, the spatially-blocked
 train/test split, trains the configured models with cross-validation, and
 writes per-model outputs to `outputs/model/<model>/`:

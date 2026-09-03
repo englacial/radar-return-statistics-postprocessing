@@ -19,13 +19,50 @@ OUT_DIR = config.get("out_dir", "outputs")
 # a single config that names its input stores and models. Invoked without store=:
 #   uv run snakemake --cores 4 model_all
 MODEL_CONFIG_PATH = config.get("model_config_path", "config/model.yaml")
-import yaml as _yaml
-with open(MODEL_CONFIG_PATH) as _f:
-    _model_cfg = _yaml.safe_load(_f) or {}
-MODEL_STORES = sorted({s for stores in _model_cfg.get(
-    "inputs", {"antarctic": ["ase", "utig"], "greenland": ["greenland"]}).values() for s in stores})
-MODELS = [m["name"] if isinstance(m, dict) else m
-          for m in _model_cfg.get("train", {}).get("models", [{"name": "linear"}])]
+import os as _os
+from pathlib import Path as _Path
+from radar_postproc.config import config_hash, load_config, load_model_config
+
+_model_cfg = load_model_config(MODEL_CONFIG_PATH)
+MODEL_STORES = sorted({s for stores in _model_cfg["inputs"].values() for s in stores})
+MODELS = [m["name"] for m in _model_cfg["train"]["models"]]
+
+
+def config_stamp(name: str, section: dict) -> str:
+    """Path of a stamp file that changes exactly when `section` changes.
+
+    Each stage hashes only its own config section into its run_id, so each
+    rule depends on a stamp of that same section rather than on the whole
+    config file: editing train settings does not rebuild the grid, and a
+    comment-only edit rebuilds nothing. Written at parse time, only when the
+    hash differs (so mtime moves only on a real change); a stamp created for
+    the first time gets an epoch mtime, so migrating existing outputs does
+    not trigger a rebuild.
+    """
+    path = _Path(OUT_DIR) / "config_stamps" / f"{name}.hash"
+    digest = config_hash(section)
+    if not path.exists():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(digest)
+        _os.utime(path, (0, 0))
+    elif path.read_text() != digest:
+        path.write_text(digest)
+    return str(path)
+
+
+def augment_stamp(store: str) -> str:
+    """Stamp of a store's full augment config (what its run_id hashes)."""
+    path = config.get("config_path", f"config/{store}.yaml")
+    return config_stamp(f"augment_{store}", load_config(path))
+
+
+# Section hashes below mirror grid.py / split.py / train.py exactly.
+_tcfg = _model_cfg["train"]
+STAMP_GRID = config_stamp("grid", {"inputs": _model_cfg["inputs"], "grid": _model_cfg["grid"]})
+STAMP_SPLIT = config_stamp("split", {"inputs": _model_cfg["inputs"], "split": _model_cfg["split"]})
+STAMP_TRAIN = {m["name"]: config_stamp(f"train_{m['name']}",
+                                       {"train": {**_tcfg, "models": [m]}, "model": m["name"]})
+               for m in _tcfg["models"]}
 
 # Which trained model the mission design tool ships. Lives in its own config
 # section so it never enters a stage's section hash (and so never perturbs a
@@ -43,10 +80,11 @@ rule all:
 
 
 rule run:
-    # The store config is an input so re-pinning icechunk.snapshot_id (or any
-    # other augment change) re-runs the extraction without --forcerun.
+    # Depends on a stamp of the store's config, so re-pinning
+    # icechunk.snapshot_id (or any other augment change) re-runs the
+    # extraction without --forcerun.
     input:
-        config=lambda w: config.get("config_path", f"config/{w.store}.yaml"),
+        stamp=lambda w: augment_stamp(w.store),
     output:
         parquet=f"{OUT_DIR}/{{store}}/{{store}}.parquet",
         manifest=f"{OUT_DIR}/{{store}}/{{store}}.manifest.json",
@@ -55,7 +93,8 @@ rule run:
 
         # Derive the config from the wildcard (not the module-level CONFIG_PATH)
         # so cross-store DAGs (e.g. model_all) build the right store.
-        run_pipeline(input.config, out_dir=OUT_DIR)
+        run_pipeline(config.get("config_path", f"config/{wildcards.store}.yaml"),
+                     out_dir=OUT_DIR)
 
 
 rule csv:
@@ -94,7 +133,9 @@ rule model_all:
 
 rule grid:
     # Full-ice-sheet covariate grid (the prediction domain). Network + slow;
-    # only re-runs when config/model.yaml's grid section changes.
+    # only re-runs when config/model.yaml's inputs/grid sections change.
+    input:
+        STAMP_GRID,
     output:
         parquet=f"{OUT_DIR}/model/grid.parquet",
         manifest=f"{OUT_DIR}/model/grid.manifest.json",
@@ -106,11 +147,9 @@ rule grid:
 
 rule split:
     # Attach the radar target to grid points, assign blocking cells + folds,
-    # emit helper maps for hand-picking test cells. model.yaml is an input so
-    # split/train config edits re-run these stages (grid deliberately not: it
-    # is slow and only its own section matters).
+    # emit helper maps for hand-picking test cells.
     input:
-        config=MODEL_CONFIG_PATH,
+        STAMP_SPLIT,
         grid=f"{OUT_DIR}/model/grid.parquet",
         stores=expand(f"{OUT_DIR}/{{s}}/{{s}}.parquet", s=MODEL_STORES),
     output:
@@ -125,7 +164,7 @@ rule split:
 
 rule train:
     input:
-        MODEL_CONFIG_PATH,
+        lambda w: STAMP_TRAIN[w.model],
         f"{OUT_DIR}/model/split.parquet",
     output:
         metrics=f"{OUT_DIR}/model/{{model}}/metrics.json",

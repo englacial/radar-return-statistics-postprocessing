@@ -14,7 +14,7 @@ $$
 \mu_i = a_i H_i - r_i
 $$
 
-Where $H_i$ is the ice thickness, $a_i$ can be interpreted as an attenuation rate, and $r_i$ can be interpreted as a basal reflectivity. $a_i$ and $r_i$ are modelled as linear functions of covariates $\mathbf{x}_i = [\,T_{\text{air}},\ \text{speed},\ \text{GHF}\,]_i$, indicators $g_i$ (Greenland) and $f_i$ (floating).
+Where $H_i$ is the ice thickness, $a_i$ can be interpreted as an attenuation rate, and $r_i$ can be interpreted as a basal reflectivity. $a_i$ and $r_i$ are modelled as linear functions of covariates $`\mathbf{x}_i = [\,T_{\text{air}},\ \text{speed},\ \text{GHF}\,]_i`$, indicators $g_i$ (Greenland) and $f_i$ (floating).
 
 
 $$\mathbf{c}_i = \bigl[\, \mathbf{x}_i,\ g_i,\ f_i,\ g_i\mathbf{x}_i \,\bigr]$$
@@ -127,7 +127,9 @@ uv run python scripts/posterior_physical.py
 cp outputs/model/analysis/posterior_physical.png docs/figures/
 ```
 
-The headline accuracy and calibration numbers (trained 2026-09-03 on the method-0.4.1 calibration snapshots with the radiometric calibration QC filter described in [Input data](2_input_data.md#radiometric-calibration-qc); 17,322 training grid points, 1,171 of them censored, plus 187 non-detections):
+Key metrics are reported below for the last model training:
+
+**Last updated:** 2026-09-03 on the method-0.4.1 calibration snapshots with the radiometric calibration QC filter
 
 | quantity | value |
 |---|---|
@@ -138,10 +140,16 @@ The headline accuracy and calibration numbers (trained 2026-09-03 on the method-
 | Fully-linear baseline (same layers) | CV 13.80 dB / test 13.98 dB |
 | Sampler diagnostics | 0 divergences, R̂ ≤ 1.005 |
 
-Posterior distributions of all 21 learned parameters, converted to physical units (the z-score normalization is an invertible affine transform, and the normalizer constants are stored in `posterior.nc`, so this conversion is exact). Attenuation-side parameters become two-way dB/km via σ_target/σ_thickness; reflectivity-side parameters become dB contributions to RSSNR (sign-flipped for the −refl convention); covariate effects are fully per-unit (e.g. dB/km/K, dB/km/(mW/m²)); θ, τ, and σ are natively in dB. Intercept-like values are referenced to the mean covariate conditions of the training set.
+Posterior distributions of all 21 learned parameters, converted to physical units (normalizer constants are stored in `posterior.nc`) are shown below.
+Note that:
+* Attenuation-side parameters become two-way dB/km via σ_target/σ_thickness
+* Reflectivity-side parameters become dB contributions to RSSNR (sign-flipped for the `−refl` convention)
+* Covariate effects are fully per-unit (e.g. dB/km/K, dB/km/(mW/m²))
+* θ, τ, and σ are natively in dB
+* Intercept-like values are referenced to the mean covariate conditions of the training set.
 
 ![Posterior distributions in physical units](figures/posterior_physical.png)
-*Posteriors in physical units, with the headline CV and held-out test RMSE. The 11.6 dB/km one-way (23.2 two-way) depth-averaged attenuation rate at mean conditions falls in the physically expected range. Posterior widths are small because n ≈ 17k; the meaningful uncertainty is the 12.7 dB residual σ. The 0/1 indicators are reported as the step between their states; the interaction panels are Greenland's *offset* from the Antarctic slope, not an absolute slope.*
+*Posteriors in physical units, with the headline CV and held-out test RMSE. The 11.6 dB/km one-way (23.2 two-way) depth-averaged attenuation rate at mean conditions falls in the physically expected range. Posterior widths are small; the meaningful uncertainty is the 12.7 dB residual σ. The 0/1 indicators are reported as the step between their states; the interaction panels are Greenland's offset from the Antarctic slope, not an absolute slope.*
 
 The distribution of observed and posterior predicted RSSNR values are shown below by ice sheet:
 
@@ -169,12 +177,12 @@ Maps of the mean and 80th percentile predictions for both ice sheets are shown b
 
 ### Effect of the radiometric calibration QC
 
-The model above is the first trained after the upstream stores shipped per-trace seam-step and surface-saturation diagnostics, with the suggested filter applied (`split.calibration_qc`). The filter drops about 14% of Antarctic and 13% of Greenland traces but leaves the fit essentially unchanged: scored on the same held-out points, the pre- and post-QC posteriors differ by 0.03 dB in RMSE, every parameter stays within about two posterior standard deviations of its previous value, and the predicted maps move by less than 1 dB almost everywhere.
+As of 2026-09-03, the input data is filtered using QC flags that identify surface saturation and image combine errors that could lead to radiometric miscalibration. The filter drops about 14% of Antarctic and 13% of Greenland traces but leaves the model fit essentially unchanged. Scored on the same held-out points, the pre- and post-QC posteriors differ by 0.03 dB in RMSE and the predicted maps move by less than 1 dB almost everywhere.
 
 ![Prediction change from the calibration QC](figures/calibration_qc_prediction_difference.png)
 *Change in posterior-mean required surface SNR from adopting the calibration QC filter (new − previous model). Median +0.01 dB (Antarctica) and +0.07 dB (Greenland); 5th–95th percentile within ±0.6 dB.*
 
-The season-level offsets visible in the crossover matrices and in the out-of-fold residuals by season are not touched by a trace-level filter and remain the largest known calibration issue. To reproduce the comparison (requires a copy of the previous `outputs/model` and augment parquets at `outputs/baseline_20260807/`):
+To reproduce the comparison (requires a copy of the previous `outputs/model` and augment parquets at `outputs/baseline_20260807/`):
 
 ```
 uv run python scripts/qc_filter_comparison.py

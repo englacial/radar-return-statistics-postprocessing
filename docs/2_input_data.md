@@ -26,7 +26,7 @@ Traces with radar-derived thickness under 100 m are dropped. (This is configured
 
 ### Radiometric calibration QC
 
-Two instrument effects can bias RSSNR at the trace level, and since 2026-09 the upstream stores ship per-trace diagnostics for both (calibration method 0.4.1; see the [dataset changelog](https://github.com/englacial/radar-return-statistics/blob/main/docs/dataset_changelog.md)):
+Two instrument effects can bias RSSNR at the trace level, and since 2026-09-03 the upstream stores include per-trace diagnostics for both (calibration method 0.4.1; see the [dataset changelog](https://github.com/englacial/radar-return-statistics/blob/main/docs/dataset_changelog.md)):
 
 * **Image-combine seam steps.** The MCoRDS products stitch a low-gain image (surface) onto higher-gain images (deep ice/bed). A miscalibrated stitch puts a power step at the seam, which biases bed power relative to surface power by that step. `img_comb_offset_dB` is the residual step measured in each frame's individual images.
 * **Surface saturation.** Where the surface return clips the receiver, surface power is underestimated and RSSNR is biased low. `surface_ceiling_margin_dB` is the distance below the season's fitted clip level, and `surface_source_image_index` records whether the surface sample came from the low-gain image (1) or a higher-gain image (≥2, likely saturated with a season-dependent low bias).
@@ -41,11 +41,6 @@ The split stage applies the upstream-suggested filter (`split.calibration_qc` in
 | any | | 14.4% / 12.7% |
 
 (Shares are of the traces entering the split stage, i.e. after the season exclusions above; a trace failing several rules is counted once, in the first row it fails.)
-
-Every rule **passes where its input is unmeasured** (NaN offset because the seam check could not run — no published images, insufficient overlap; NaN margin because no credible ceiling was fitted; unknown source image). That is the changelog's "no evidence either way" reading, and it matters: the seam check could not run on 92% of 2014_Greenland_P3 and 61% of 2012_Antarctica_DC8 at their flight geometry, so dropping unmeasured traces would remove whole seasons (35% of Antarctic and 50% of Greenland traces) rather than bad traces. The img2 rule is kept as suggested because img2-sourced traces have median RSSNR 8–17 dB below img1 traces of the same DC8 season, consistent with the documented surface-power low bias.
-
-The filter is a trace-level cleanup, not a season-level recalibration. Retraining with it (2026-09-01, `outputs/qc_filter/`, `uv run python scripts/qc_filter_comparison.py`) lowers the atten_refl spatial-CV RMSE from 13.02 to 12.87 dB, leaves held-out test RMSE within 0.05 dB when both posteriors are scored on the same points, and shifts full-grid predictions by less than 1 dB (5th–95th percentile −0.3 to +0.6 dB). The crossover matrices above are almost unchanged by it (`scripts/season_crossover_matrix.py --calibration-qc`): within-season scatter tightens for the seam-affected seasons, but the season-to-season offsets (e.g. 2012_Antarctica_DC8 ~12 dB below the later DC8 seasons) remain, and the QC alone catches only 2% of 2013_Greenland_P3 and 46% of 2017_Antarctica_Basler — so the two season exclusions stay.
-
 
 ## Do the surveys agree with each other?
 
@@ -70,8 +65,6 @@ cp outputs/model/analysis/season_crossover_matrix_*.png docs/figures/
 ```
 
 There are two notable outlier seasons: `2017_Antarctica_Basler` and `2013_Greenland_P3`. These two seasons show significant stitching artifacts that likely explain these offsets. They are excluded from further analysis for now.
-
-> **Stitching artifacts:** Both the MCoRDS and HiCARS/MARFA systems rely on some sort of stitching across either multiple distinct waveforms or ADC channels to achieve their roughly ~100-120 dB dynamic range. If this stitching is incorrectly calibrated, it can artificially make the bed return stronger or weaker relative to the surface than it actually is. More effectively detecting and filtering this out is an ongoing area of work.
 
 The good news is that most seasons agree with each other reasonably well, even across the two institutions.
 

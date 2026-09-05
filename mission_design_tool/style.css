@@ -147,6 +147,8 @@ h3 { font-size: 14px; margin: 0 0 10px; }
 .intro { margin-top: 28px; }
 .intro p { margin: 0 0 14px; }
 .lede { font-size: 17px; line-height: 1.5; }
+.authors { color: var(--muted); font-size: 12.5px; line-height: 1.5; margin: 0 0 10px; }
+.authors .credit-note { white-space: nowrap; }
 .note { color: var(--muted); font-size: 13.5px; }
 /* Equations: pre.eq is the display block, code.eq the inline form. `code` is
    inline by default — a `pre` used mid-sentence is block-level and makes the
